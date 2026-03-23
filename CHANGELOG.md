@@ -1,3 +1,9 @@
+## v3.9.2 (2026-03-23)
+
+### Fix
+
+- revert Python 3.14 support — torch 2.8.0 lacks 3.14 wheels
+
 ## v3.9.1 (2026-03-23)
 
 ### Fix
