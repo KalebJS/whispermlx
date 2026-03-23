@@ -1,6 +1,5 @@
 import os
-from typing import Callable, Text, Union
-from typing import Optional
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -8,12 +7,13 @@ from pyannote.audio import Model
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines import VoiceActivityDetection
 from pyannote.audio.pipelines.utils import PipelineModel
-from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.core import Annotation
 from pyannote.core import Segment
+from pyannote.core import SlidingWindowFeature
 
-from whisperx.diarize import Segment as SegmentX
-from whisperx.vads.vad import Vad
-from whisperx.log_utils import get_logger
+from whispermlx.diarize import Segment as SegmentX
+from whispermlx.log_utils import get_logger
+from whispermlx.vads.vad import Vad
 
 logger = get_logger(__name__)
 
@@ -23,7 +23,7 @@ def load_vad_model(device, vad_onset=0.500, vad_offset=0.363, token=None, model_
 
     main_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    os.makedirs(model_dir, exist_ok = True)
+    os.makedirs(model_dir, exist_ok=True)
     if model_fp is None:
         # Dynamically resolve the path to the model file
         model_fp = os.path.join(main_dir, "assets", "pytorch_model.bin")
@@ -39,14 +39,17 @@ def load_vad_model(device, vad_onset=0.500, vad_offset=0.363, token=None, model_
         raise RuntimeError(f"{model_fp} exists and is not a regular file")
 
     vad_model = Model.from_pretrained(model_fp, token=token)
-    hyperparameters = {"onset": vad_onset,
-                    "offset": vad_offset,
-                    "min_duration_on": 0.1,
-                    "min_duration_off": 0.1}
+    hyperparameters = {
+        "onset": vad_onset,
+        "offset": vad_offset,
+        "min_duration_on": 0.1,
+        "min_duration_off": 0.1,
+    }
     vad_pipeline = VoiceActivitySegmentation(segmentation=vad_model, device=torch.device(device))
     vad_pipeline.instantiate(hyperparameters)
 
     return vad_pipeline
+
 
 class Binarize:
     """Binarize detection scores using hysteresis thresholding, with min-cut operation
@@ -82,16 +85,15 @@ class Binarize:
     """
 
     def __init__(
-            self,
-            onset: float = 0.5,
-            offset: Optional[float] = None,
-            min_duration_on: float = 0.0,
-            min_duration_off: float = 0.0,
-            pad_onset: float = 0.0,
-            pad_offset: float = 0.0,
-            max_duration: float = float('inf')
+        self,
+        onset: float = 0.5,
+        offset: float | None = None,
+        min_duration_on: float = 0.0,
+        min_duration_off: float = 0.0,
+        pad_onset: float = 0.0,
+        pad_offset: float = 0.0,
+        max_duration: float = float("inf"),
     ):
-
         super().__init__()
 
         self.onset = onset
@@ -124,7 +126,6 @@ class Binarize:
         # annotation meant to store 'active' regions
         active = Annotation()
         for k, k_scores in enumerate(scores.data.T):
-
             label = k if scores.labels is None else scores.labels[k]
 
             # initial state
@@ -133,7 +134,7 @@ class Binarize:
             curr_scores = [k_scores[0]]
             curr_timestamps = [start]
             t = start
-            for t, y in zip(timestamps[1:], k_scores[1:]):
+            for t, y in zip(timestamps[1:], k_scores[1:], strict=False):
                 # currently active
                 if is_active:
                     curr_duration = t - start
@@ -145,8 +146,8 @@ class Binarize:
                         region = Segment(start - self.pad_onset, min_score_t + self.pad_offset)
                         active[region, k] = label
                         start = curr_timestamps[min_score_div_idx]
-                        curr_scores = curr_scores[min_score_div_idx + 1:]
-                        curr_timestamps = curr_timestamps[min_score_div_idx + 1:]
+                        curr_scores = curr_scores[min_score_div_idx + 1 :]
+                        curr_timestamps = curr_timestamps[min_score_div_idx + 1 :]
                     # switching from active to inactive
                     elif y < self.offset:
                         region = Segment(start - self.pad_onset, t + self.pad_offset)
@@ -173,7 +174,7 @@ class Binarize:
         # also: fill same speaker gaps shorter than min_duration_off
         if self.pad_offset > 0.0 or self.pad_onset > 0.0 or self.min_duration_off > 0.0:
             if self.max_duration < float("inf"):
-                raise NotImplementedError(f"This would break current max_duration param")
+                raise NotImplementedError("This would break current max_duration param")
             active = active.support(collar=self.min_duration_off)
 
         # remove tracks shorter than min_duration_on
@@ -187,16 +188,15 @@ class Binarize:
 
 class VoiceActivitySegmentation(VoiceActivityDetection):
     def __init__(
-            self,
-            segmentation: PipelineModel = "pyannote/segmentation",
-            fscore: bool = False,
-            token: Union[Text, None] = None,
-            **inference_kwargs,
+        self,
+        segmentation: PipelineModel = "pyannote/segmentation",
+        fscore: bool = False,
+        token: str | None = None,
+        **inference_kwargs,
     ):
-
         super().__init__(segmentation=segmentation, fscore=fscore, token=token, **inference_kwargs)
 
-    def apply(self, file: AudioFile, hook: Optional[Callable] = None) -> Annotation:
+    def apply(self, file: AudioFile, hook: Callable | None = None) -> Annotation:
         """Apply voice activity detection
 
         Parameters
@@ -231,10 +231,9 @@ class VoiceActivitySegmentation(VoiceActivityDetection):
 
 
 class Pyannote(Vad):
-
     def __init__(self, device, token=None, model_fp=None, **kwargs):
         logger.info("Performing voice activity detection using Pyannote...")
-        super().__init__(kwargs['vad_onset'])
+        super().__init__(kwargs["vad_onset"])
         self.vad_pipeline = load_vad_model(device, token=token, model_fp=model_fp)
 
     def __call__(self, audio: AudioFile, **kwargs):
@@ -245,11 +244,12 @@ class Pyannote(Vad):
         return torch.from_numpy(audio).unsqueeze(0)
 
     @staticmethod
-    def merge_chunks(segments,
-                     chunk_size,
-                     onset: float = 0.5,
-                     offset: Optional[float] = None,
-                     ):
+    def merge_chunks(
+        segments,
+        chunk_size,
+        onset: float = 0.5,
+        offset: float | None = None,
+    ):
         assert chunk_size > 0
         binarize = Binarize(max_duration=chunk_size, onset=onset, offset=offset)
         segments = binarize(segments)

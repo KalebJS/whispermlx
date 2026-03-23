@@ -4,15 +4,19 @@ import os
 import warnings
 
 import numpy as np
-import torch
 
-from whisperx.alignment import align, load_align_model
-from whisperx.asr import load_model
-from whisperx.audio import load_audio
-from whisperx.diarize import DiarizationPipeline, assign_word_speakers
-from whisperx.schema import AlignedTranscriptionResult, TranscriptionResult
-from whisperx.utils import LANGUAGES, TO_LANGUAGE_CODE, get_writer
-from whisperx.log_utils import get_logger
+from whispermlx.alignment import align
+from whispermlx.alignment import load_align_model
+from whispermlx.asr import load_model
+from whispermlx.audio import load_audio
+from whispermlx.diarize import DiarizationPipeline
+from whispermlx.diarize import assign_word_speakers
+from whispermlx.log_utils import get_logger
+from whispermlx.schema import AlignedTranscriptionResult
+from whispermlx.schema import TranscriptionResult
+from whispermlx.utils import LANGUAGES
+from whispermlx.utils import TO_LANGUAGE_CODE
+from whispermlx.utils import get_writer
 
 logger = get_logger(__name__)
 
@@ -65,7 +69,7 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
     return_speaker_embeddings: bool = args.pop("speaker_embeddings")
 
     if return_speaker_embeddings and not diarize:
-        warnings.warn("--speaker_embeddings has no effect without --diarize")
+        warnings.warn("--speaker_embeddings has no effect without --diarize", stacklevel=2)
 
     if args["language"] is not None:
         args["language"] = args["language"].lower()
@@ -78,7 +82,8 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
     if model_name.endswith(".en") and args["language"] != "en":
         if args["language"] is not None:
             warnings.warn(
-                f"{model_name} is an English-only model but received '{args['language']}'; using English instead."
+                f"{model_name} is an English-only model but received '{args['language']}'; using English instead.",
+                stacklevel=2,
             )
         args["language"] = "en"
     align_language = (
@@ -93,7 +98,6 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
 
     faster_whisper_threads = 4
     if (threads := args.pop("threads")) > 0:
-        torch.set_num_threads(threads)
         faster_whisper_threads = threads
 
     asr_options = {
@@ -118,7 +122,7 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
             if args[option]:
                 parser.error(f"--{option} not possible with --no_align")
     if args["max_line_count"] and not args["max_line_width"]:
-        warnings.warn("--max_line_count has no effect without --max_line_width")
+        warnings.warn("--max_line_count has no effect without --max_line_width", stacklevel=2)
     writer_args = {arg: args.pop(arg) for arg in word_options}
 
     # Part 1: VAD & ASR Loop
@@ -160,7 +164,6 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
     # Unload Whisper and VAD
     del model
     gc.collect()
-    torch.cuda.empty_cache()
 
     # Part 2: Align Loop
     if not no_align:
@@ -203,7 +206,6 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
         # Unload align model
         del align_model
         gc.collect()
-        torch.cuda.empty_cache()
 
     # >> Diarize
     if diarize:
@@ -218,9 +220,9 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
         diarize_model = DiarizationPipeline(model_name=diarize_model_name, token=hf_token, device=device, cache_dir=model_dir)
         for result, input_audio_path in tmp_results:
             diarize_result = diarize_model(
-                input_audio_path, 
-                min_speakers=min_speakers, 
-                max_speakers=max_speakers, 
+                input_audio_path,
+                min_speakers=min_speakers,
+                max_speakers=max_speakers,
                 return_embeddings=return_speaker_embeddings
             )
 

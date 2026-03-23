@@ -1,6 +1,5 @@
 import logging
 import sys
-from typing import Optional
 
 _LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -8,7 +7,7 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 def setup_logging(
     level: str = "info",
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
 ) -> None:
     """
     Configure logging for WhisperX.
@@ -17,7 +16,7 @@ def setup_logging(
         level: Logging level (debug, info, warning, error, critical). Default: info
         log_file: Optional path to log file. If None, logs only to console.
     """
-    logger = logging.getLogger("whisperx")
+    logger = logging.getLogger("whispermlx")
 
     logger.handlers.clear()
 
@@ -41,7 +40,7 @@ def setup_logging(
             file_handler.setLevel(log_level)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
-        except (OSError) as e:
+        except OSError as e:
             logger.warning(f"Failed to create log file '{log_file}': {e}")
             logger.warning("Continuing with console logging only")
 
@@ -59,9 +58,9 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         Logger instance configured with WhisperX settings
     """
-    whisperx_logger = logging.getLogger("whisperx")
-    if not whisperx_logger.handlers:
+    whispermlx_logger = logging.getLogger("whispermlx")
+    if not whispermlx_logger.handlers:
         setup_logging()
 
-    logger_name = "whisperx" if name == "__main__" else name
+    logger_name = "whispermlx" if name == "__main__" else name
     return logging.getLogger(logger_name)

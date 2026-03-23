@@ -2,11 +2,12 @@ import argparse
 import importlib.metadata
 import platform
 
-import torch
-
-from whisperx.utils import (LANGUAGES, TO_LANGUAGE_CODE, optional_float,
-                            optional_int, str2bool)
-from whisperx.log_utils import setup_logging
+from whispermlx.log_utils import setup_logging
+from whispermlx.utils import LANGUAGES
+from whispermlx.utils import TO_LANGUAGE_CODE
+from whispermlx.utils import optional_float
+from whispermlx.utils import optional_int
+from whispermlx.utils import str2bool
 
 
 def cli():
@@ -16,7 +17,7 @@ def cli():
     parser.add_argument("--model", default="small", help="name of the Whisper model to use")
     parser.add_argument("--model_cache_only", type=str2bool, default=False, help="If True, will not attempt to download models, instead using cached models from --model_dir")
     parser.add_argument("--model_dir", type=str, default=None, help="the path to save model files; uses ~/.cache/whisper by default")
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="device type to use for PyTorch inference (e.g. cpu, cuda)")
+    parser.add_argument("--device", default="cpu", help="device for VAD model (cpu recommended on Apple Silicon; MLX inference uses GPU automatically)")
     parser.add_argument("--device_index", default=0, type=int, help="device index to use for FasterWhisper inference")
     parser.add_argument("--batch_size", default=8, type=int, help="the preferred batch size for inference")
     parser.add_argument("--compute_type", default="default", type=str, choices=["default", "float16", "float32", "int8"], help="compute type for computation; 'default' uses float16 on GPU, float32 on CPU")
@@ -77,7 +78,7 @@ def cli():
     parser.add_argument("--hf_token", type=str, default=None, help="Hugging Face Access Token to access PyAnnote gated models")
 
     parser.add_argument("--print_progress", type=str2bool, default = False, help = "if True, progress will be printed in transcribe() and align() methods.")
-    parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {importlib.metadata.version('whisperx')}",help="Show whisperx version information and exit")
+    parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {importlib.metadata.version('whispermlx')}",help="Show whispermlx version information and exit")
     parser.add_argument("--python-version", "-P", action="version", version=f"Python {platform.python_version()} ({platform.python_implementation()})",help="Show python version information and exit")
     # fmt: on
 
@@ -93,7 +94,7 @@ def cli():
     else:
         setup_logging(level="warning")
 
-    from whisperx.transcribe import transcribe_task
+    from whispermlx.transcribe import transcribe_task
 
     transcribe_task(args, parser)
 

@@ -3,7 +3,8 @@ import os
 import re
 import sys
 import zlib
-from typing import Callable, Optional, TextIO
+from collections.abc import Callable
+from typing import TextIO
 
 LANGUAGES = {
     "en": "english",
@@ -128,23 +129,23 @@ LANGUAGES_WITHOUT_SPACES = ["ja", "zh"]
 
 # Mapping of language codes to NLTK Punkt tokenizer model names
 PUNKT_LANGUAGES = {
-    'cs': 'czech',
-    'da': 'danish', 
-    'de': 'german',
-    'el': 'greek',
-    'en': 'english',
-    'es': 'spanish',
-    'et': 'estonian',
-    'fi': 'finnish',
-    'fr': 'french',
-    'it': 'italian',
-    'nl': 'dutch',
-    'no': 'norwegian',
-    'pl': 'polish',
-    'pt': 'portuguese',
-    'sl': 'slovene',
-    'sv': 'swedish',
-    'tr': 'turkish',
+    "cs": "czech",
+    "da": "danish",
+    "de": "german",
+    "el": "greek",
+    "en": "english",
+    "es": "spanish",
+    "et": "estonian",
+    "fi": "finnish",
+    "fr": "french",
+    "it": "italian",
+    "nl": "dutch",
+    "no": "norwegian",
+    "pl": "polish",
+    "pt": "portuguese",
+    "sl": "slovene",
+    "sv": "swedish",
+    "tr": "turkish",
     "ml": "malayalam",
     "ru": "russian",
 }
@@ -191,9 +192,7 @@ def compression_ratio(text) -> float:
     return len(text_bytes) / len(zlib.compress(text_bytes))
 
 
-def format_timestamp(
-    seconds: float, always_include_hours: bool = False, decimal_marker: str = "."
-):
+def format_timestamp(seconds: float, always_include_hours: bool = False, decimal_marker: str = "."):
     assert seconds >= 0, "non-negative timestamp expected"
     milliseconds = round(seconds * 1000.0)
 
@@ -207,9 +206,7 @@ def format_timestamp(
     milliseconds -= seconds * 1_000
 
     hours_marker = f"{hours:02d}:" if always_include_hours or hours > 0 else ""
-    return (
-        f"{hours_marker}{minutes:02d}:{seconds:02d}{decimal_marker}{milliseconds:03d}"
-    )
+    return f"{hours_marker}{minutes:02d}:{seconds:02d}{decimal_marker}{milliseconds:03d}"
 
 
 class ResultWriter:
@@ -221,9 +218,7 @@ class ResultWriter:
     def __call__(self, result: dict, audio_path: str, options: dict):
         audio_basename = os.path.basename(audio_path)
         audio_basename = os.path.splitext(audio_basename)[0]
-        output_path = os.path.join(
-            self.output_dir, audio_basename + "." + self.extension
-        )
+        output_path = os.path.join(self.output_dir, audio_basename + "." + self.extension)
 
         with open(output_path, "w", encoding="utf-8") as f:
             self.write_result(result, file=f, options=options)
@@ -250,8 +245,8 @@ class SubtitlesWriter(ResultWriter):
     decimal_marker: str
 
     def iterate_result(self, result: dict, options: dict):
-        raw_max_line_width: Optional[int] = options["max_line_width"]
-        max_line_count: Optional[int] = options["max_line_count"]
+        raw_max_line_width: int | None = options["max_line_width"]
+        max_line_count: int | None = options["max_line_count"]
         highlight_words: bool = options["highlight_words"]
         max_line_width = 1000 if raw_max_line_width is None else raw_max_line_width
         preserve_segments = max_line_count is None or raw_max_line_width is None
@@ -340,13 +335,18 @@ class SubtitlesWriter(ResultWriter):
                             if last != start:
                                 yield last, start, prefix + subtitle_text
 
-                            yield start, end, prefix + " ".join(
-                                [
-                                    re.sub(r"^(\s*)(.*)$", r"\1<u>\2</u>", word)
-                                    if j == i
-                                    else word
-                                    for j, word in enumerate(all_words)
-                                ]
+                            yield (
+                                start,
+                                end,
+                                prefix
+                                + " ".join(
+                                    [
+                                        re.sub(r"^(\s*)(.*)$", r"\1<u>\2</u>", word)
+                                        if j == i
+                                        else word
+                                        for j, word in enumerate(all_words)
+                                    ]
+                                ),
                             )
                             last = end
                 else:
@@ -385,9 +385,7 @@ class WriteSRT(SubtitlesWriter):
     decimal_marker: str = ","
 
     def write_result(self, result: dict, file: TextIO, options: dict):
-        for i, (start, end, text) in enumerate(
-            self.iterate_result(result, options), start=1
-        ):
+        for i, (start, end, text) in enumerate(self.iterate_result(result, options), start=1):
             print(f"{i}\n{start} --> {end}\n{text}\n", file=file, flush=True)
 
 
@@ -410,28 +408,33 @@ class WriteTSV(ResultWriter):
             print(round(1000 * segment["end"]), file=file, end="\t")
             print(segment["text"].strip().replace("\t", " "), file=file, flush=True)
 
+
 class WriteAudacity(ResultWriter):
     """
     Write a transcript to a text file that audacity can import as labels.
     The extension used is "aud" to distinguish it from the txt file produced by WriteTXT.
     Yet this is not an audacity project but only a label file!
-    
-    Please note : Audacity uses seconds in timestamps not ms! 
+
+    Please note : Audacity uses seconds in timestamps not ms!
     Also there is no header expected.
 
     If speaker is provided it is prepended to the text between double square brackets [[]].
     """
 
-    extension: str = "aud"    
+    extension: str = "aud"
 
     def write_result(self, result: dict, file: TextIO, options: dict):
         ARROW = "	"
         for segment in result["segments"]:
             print(segment["start"], file=file, end=ARROW)
             print(segment["end"], file=file, end=ARROW)
-            print( ( ("[[" + segment["speaker"] + "]]") if "speaker" in segment else "") + segment["text"].strip().replace("\t", " "), file=file, flush=True)
+            print(
+                (("[[" + segment["speaker"] + "]]") if "speaker" in segment else "")
+                + segment["text"].strip().replace("\t", " "),
+                file=file,
+                flush=True,
+            )
 
-            
 
 class WriteJSON(ResultWriter):
     extension: str = "json"
@@ -440,9 +443,7 @@ class WriteJSON(ResultWriter):
         json.dump(result, file, ensure_ascii=False)
 
 
-def get_writer(
-    output_format: str, output_dir: str
-) -> Callable[[dict, str, dict], None]:
+def get_writer(output_format: str, output_dir: str) -> Callable[[dict, str, dict], None]:
     writers = {
         "txt": WriteTXT,
         "vtt": WriteVTT,
@@ -467,7 +468,8 @@ def get_writer(
         return optional_writers[output_format](output_dir)
     return writers[output_format](output_dir)
 
-def interpolate_nans(x, method='nearest'):
+
+def interpolate_nans(x, method="nearest"):
     if x.notnull().sum() > 1:
         return x.interpolate(method=method).ffill().bfill()
     else:

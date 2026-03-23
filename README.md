@@ -1,4 +1,4 @@
-<h1 align="center">WhisperX</h1>
+<h1 align="center">whisper(ml)x</h1>
 
 ## Recall.ai - Meeting Transcription API
 

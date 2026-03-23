@@ -1,13 +1,12 @@
 import os
 import subprocess
-from functools import lru_cache
-from typing import Optional, Union
+from functools import cache
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from whisperx.utils import exact_div
+from whispermlx.utils import exact_div
 
 # hard-coded audio hyperparameters
 SAMPLE_RATE = 16000
@@ -71,9 +70,7 @@ def pad_or_trim(array, length: int = N_SAMPLES, *, axis: int = -1):
     """
     if torch.is_tensor(array):
         if array.shape[axis] > length:
-            array = array.index_select(
-                dim=axis, index=torch.arange(length, device=array.device)
-            )
+            array = array.index_select(dim=axis, index=torch.arange(length, device=array.device))
 
         if array.shape[axis] < length:
             pad_widths = [(0, 0)] * array.ndim
@@ -91,7 +88,7 @@ def pad_or_trim(array, length: int = N_SAMPLES, *, axis: int = -1):
     return array
 
 
-@lru_cache(maxsize=None)
+@cache
 def mel_filters(device, n_mels: int) -> torch.Tensor:
     """
     load the mel filterbank matrix for projecting STFT into a Mel spectrogram.
@@ -103,17 +100,15 @@ def mel_filters(device, n_mels: int) -> torch.Tensor:
         )
     """
     assert n_mels in [80, 128], f"Unsupported n_mels: {n_mels}"
-    with np.load(
-        os.path.join(os.path.dirname(__file__), "assets", "mel_filters.npz")
-    ) as f:
+    with np.load(os.path.join(os.path.dirname(__file__), "assets", "mel_filters.npz")) as f:
         return torch.from_numpy(f[f"mel_{n_mels}"]).to(device)
 
 
 def log_mel_spectrogram(
-    audio: Union[str, np.ndarray, torch.Tensor],
+    audio: str | np.ndarray | torch.Tensor,
     n_mels: int,
     padding: int = 0,
-    device: Optional[Union[str, torch.device]] = None,
+    device: str | torch.device | None = None,
 ):
     """
     Compute the log-Mel spectrogram of

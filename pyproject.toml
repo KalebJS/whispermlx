@@ -1,7 +1,7 @@
 [project]
 urls = { repository = "https://github.com/m-bain/whisperx" }
 authors = [{ name = "Max Bain" }]
-name = "whisperx"
+name = "whispermlx"
 version = "3.8.2"
 description = "Time-Accurate Automatic Speech Recognition using Whisper."
 readme = "README.md"
@@ -9,8 +9,7 @@ requires-python = ">=3.10, <3.14"
 license = { text = "BSD-2-Clause" }
 
 dependencies = [
-    "ctranslate2>=4.5.0",
-    "faster-whisper>=1.1.1",
+    "mlx-whisper>=0.4.0",
     "nltk>=3.9.1",
     "numpy>=2.1.0",
     "omegaconf>=2.3.0",
@@ -20,12 +19,11 @@ dependencies = [
     "torch~=2.8.0",
     "torchaudio~=2.8.0",
     "transformers>=4.48.0",
-    "triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'" # only install triton on x86_64 Linux
 ]
 
 
 [project.scripts]
-whisperx = "whisperx.__main__:cli"
+whispermlx = "whispermlx.__main__:cli"
 
 [build-system]
 requires = ["setuptools"]
@@ -35,7 +33,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["whisperx*"]
+include = ["whispermlx*"]
 
 # torchcodec (transitive dep of pyannote-audio >=4) has no wheels for Linux aarch64
 [tool.uv]
@@ -45,25 +43,41 @@ override-dependencies = [
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cpu", marker = "sys_platform == 'darwin'" },
-  { index = "pytorch-cpu", marker = "platform_machine != 'x86_64' and sys_platform != 'darwin'" },
-  { index = "pytorch", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
+  { index = "pytorch-cpu" },
 ]
 torchaudio = [
-  { index = "pytorch-cpu", marker = "sys_platform == 'darwin'" },
-  { index = "pytorch-cpu", marker = "platform_machine != 'x86_64' and sys_platform != 'darwin'" },
-  { index = "pytorch", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
+  { index = "pytorch-cpu" },
 ]
-triton = [
-  { index = "pytorch", marker = "sys_platform == 'linux'" },
-]
-
-[[tool.uv.index]]
-name = "pytorch"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # line too long — handled by formatter
+]
+
+[tool.ruff.lint.isort]
+force-single-line = true  # each import on its own line
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.bandit]
+targets = ["whispermlx"]
+skips = ["B101"]  # ignore assert statements
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_scheme = "pep440"
+version_provider = "uv"
+update_changelog_on_bump = true
