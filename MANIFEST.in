@@ -1,3 +1,2 @@
-include whisperx/assets/*
+include whispermlx/assets/*
 include LICENSE
-include requirements.txt
