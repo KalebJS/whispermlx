@@ -1,3 +1,9 @@
+## v3.9.1 (2026-03-23)
+
+### Fix
+
+- include assets in wheel and add Python 3.14 to CI matrix
+
 ## v3.9.0 (2026-03-23)
 
 ### Feat
