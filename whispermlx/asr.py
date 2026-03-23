@@ -1,5 +1,9 @@
+import contextlib
+import io
+
 import mlx_whisper as _mlx_whisper_module
 import numpy as np
+from tqdm import tqdm
 
 from whispermlx.audio import SAMPLE_RATE
 from whispermlx.audio import load_audio
@@ -111,20 +115,22 @@ class MLXWhisperPipeline:
         segments: list[SingleSegment] = []
         total_segments = len(vad_segments)
 
+        pbar = tqdm(total=total_segments, desc="Transcribing", unit="seg")
         for idx, vad_seg in enumerate(vad_segments):
             f1 = int(vad_seg["start"] * SAMPLE_RATE)
             f2 = int(vad_seg["end"] * SAMPLE_RATE)
             audio_chunk = audio[f1:f2]
 
-            mlx_result = _mlx_whisper_module.transcribe(
-                audio_chunk,
-                path_or_hf_repo=self.model_path,
-                language=effective_language,
-                task=effective_task,
-                verbose=False,
-                initial_prompt=self.initial_prompt,
-                word_timestamps=False,
-            )
+            with contextlib.redirect_stderr(io.StringIO()):
+                mlx_result = _mlx_whisper_module.transcribe(
+                    audio_chunk,
+                    path_or_hf_repo=self.model_path,
+                    language=effective_language,
+                    task=effective_task,
+                    verbose=False,
+                    initial_prompt=self.initial_prompt,
+                    word_timestamps=False,
+                )
 
             if effective_language is None and idx == 0:
                 effective_language = mlx_result.get("language")
@@ -132,14 +138,15 @@ class MLXWhisperPipeline:
             chunk_text = mlx_result.get("text", "").strip()
             avg_logprob = _compute_avg_logprob(mlx_result.get("segments", []))
 
+            pbar.update(1)
             if verbose:
-                logger.info(
+                tqdm.write(
                     f"[{round(vad_seg['start'], 3)} --> {round(vad_seg['end'], 3)}] {chunk_text}"
                 )
             if print_progress:
                 base = ((idx + 1) / total_segments) * 100
                 pct = base / 2 if combined_progress else base
-                print(f"Progress: {pct:.2f}%...")
+                tqdm.write(f"Progress: {pct:.2f}%...")
             if progress_callback is not None:
                 progress_callback(((idx + 1) / total_segments) * 100)
 
@@ -152,6 +159,7 @@ class MLXWhisperPipeline:
                 }
             )
 
+        pbar.close()
         return {"segments": segments, "language": effective_language or "en"}
 
 
