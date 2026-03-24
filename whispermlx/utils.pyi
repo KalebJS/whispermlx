@@ -1,0 +1,63 @@
+from collections.abc import Callable
+from typing import TextIO
+
+LANGUAGES: dict[str, str]
+TO_LANGUAGE_CODE: dict[str, str]
+LANGUAGES_WITHOUT_SPACES: list[str]
+PUNKT_LANGUAGES: dict[str, str]
+
+def make_safe(string: str) -> str: ...
+def exact_div(x: int, y: int) -> int: ...
+def str2bool(string: str) -> bool: ...
+def optional_int(string: str) -> int | None: ...
+def optional_float(string: str) -> float | None: ...
+def compression_ratio(text: str) -> float: ...
+def format_timestamp(
+    seconds: float,
+    always_include_hours: bool = ...,
+    decimal_marker: str = ...,
+) -> str: ...
+def interpolate_nans(x: object, method: str = ...) -> object: ...
+
+class ResultWriter:
+    extension: str
+    output_dir: str
+
+    def __init__(self, output_dir: str) -> None: ...
+    def __call__(self, result: dict, audio_path: str, options: dict) -> None: ...
+    def write_result(self, result: dict, file: TextIO, options: dict) -> None: ...
+
+class WriteTXT(ResultWriter):
+    extension: str
+    def write_result(self, result: dict, file: TextIO, options: dict) -> None: ...
+
+class SubtitlesWriter(ResultWriter):
+    always_include_hours: bool
+    decimal_marker: str
+
+    def iterate_result(
+        self, result: dict, options: dict
+    ) -> object: ...  # yields (start, end, text) tuples
+    def format_timestamp(self, seconds: float) -> str: ...
+
+class WriteVTT(SubtitlesWriter):
+    extension: str
+    def write_result(self, result: dict, file: TextIO, options: dict) -> None: ...
+
+class WriteSRT(SubtitlesWriter):
+    extension: str
+    def write_result(self, result: dict, file: TextIO, options: dict) -> None: ...
+
+class WriteTSV(ResultWriter):
+    extension: str
+    def write_result(self, result: dict, file: TextIO, options: dict) -> None: ...
+
+class WriteAudacity(ResultWriter):
+    extension: str
+    def write_result(self, result: dict, file: TextIO, options: dict) -> None: ...
+
+class WriteJSON(ResultWriter):
+    extension: str
+    def write_result(self, result: dict, file: TextIO, options: dict) -> None: ...
+
+def get_writer(output_format: str, output_dir: str) -> Callable[[dict, str, dict], None]: ...
