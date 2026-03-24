@@ -95,7 +95,7 @@ class DiarizationPipeline:
         self,
         model_name=None,
         token=None,
-        device: str | torch.device | None = "cpu",
+        device: str | torch.device | None = "mps",
         cache_dir=None,
     ):
         if isinstance(device, str):

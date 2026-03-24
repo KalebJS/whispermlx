@@ -17,7 +17,7 @@ def cli():
     parser.add_argument("--model", default="small", help="name of the Whisper model to use")
     parser.add_argument("--model_cache_only", type=str2bool, default=False, help="If True, will not attempt to download models, instead using cached models from --model_dir")
     parser.add_argument("--model_dir", type=str, default=None, help="the path to save model files; uses ~/.cache/whisper by default")
-    parser.add_argument("--device", default="cpu", help="device for VAD model (cpu recommended on Apple Silicon; MLX inference uses GPU automatically)")
+    parser.add_argument("--device", default="mps", help="device for PyTorch models (VAD, alignment, diarization); MLX Whisper inference uses Apple Silicon GPU automatically")
     parser.add_argument("--device_index", default=0, type=int, help="device index to use for FasterWhisper inference")
     parser.add_argument("--batch_size", default=8, type=int, help="the preferred batch size for inference")
     parser.add_argument("--compute_type", default="default", type=str, choices=["default", "float16", "float32", "int8"], help="compute type for computation; 'default' uses float16 on GPU, float32 on CPU")

@@ -221,7 +221,7 @@ def load_model(
         resolved_vad = vad_model
     else:
         if vad_method == "silero":
-            resolved_vad = Silero(**default_vad_options)
+            resolved_vad = Silero(device=device, **default_vad_options)
         elif vad_method == "pyannote":
             import torch
 

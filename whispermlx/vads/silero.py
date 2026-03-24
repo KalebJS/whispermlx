@@ -21,6 +21,7 @@ class Silero(Vad):
 
         self.vad_onset = kwargs["vad_onset"]
         self.chunk_size = kwargs["chunk_size"]
+        self.device = torch.device(kwargs.get("device", "mps"))
         self.vad_pipeline, vad_utils = torch.hub.load(
             repo_or_dir="snakers4/silero-vad",
             model="silero_vad",
@@ -28,6 +29,7 @@ class Silero(Vad):
             onnx=False,
             trust_repo=True,
         )
+        self.vad_pipeline = self.vad_pipeline.to(self.device)
         (self.get_speech_timestamps, _, self.read_audio, _, _) = vad_utils
 
     def __call__(self, audio: AudioFile, **kwargs):
@@ -40,7 +42,7 @@ class Silero(Vad):
             raise ValueError("Only 16000Hz sample rate is allowed")
 
         timestamps = self.get_speech_timestamps(
-            audio["waveform"],
+            audio["waveform"].to(self.device),
             model=self.vad_pipeline,
             sampling_rate=sample_rate,
             max_speech_duration_s=self.chunk_size,
