@@ -179,4 +179,8 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-test_*
+# Ignore test media files but not test Python modules
+test_*.mp3
+test_*.wav
+test_*.m4a
+test_*.flac

@@ -26,6 +26,9 @@ dependencies = [
 [project.scripts]
 whispermlx = "whispermlx.__main__:cli"
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [build-system]
 requires = ["setuptools"]
 
