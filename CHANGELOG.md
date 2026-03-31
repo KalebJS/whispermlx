@@ -1,3 +1,9 @@
+## v3.11.0 (2026-03-31)
+
+### Feat
+
+- port upstream bug fixes and test infrastructure from m-bain/whisperX
+
 ## v3.10.1 (2026-03-24)
 
 ### Fix
