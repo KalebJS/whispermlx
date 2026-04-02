@@ -1,5 +1,24 @@
 """Shared fixtures for the whispermlx test suite."""
 
+import sys
+
+# mlx requires Apple Silicon native libraries; stub it out on Linux/x86 CI
+# so that test_asr.py (which imports whispermlx.asr → mlx_whisper) can be collected.
+try:
+    import mlx.core  # noqa: F401
+except (ImportError, OSError):
+    from unittest.mock import MagicMock
+
+    for _mod in [
+        "mlx",
+        "mlx.core",
+        "mlx_whisper",
+        "mlx_whisper.audio",
+        "mlx_whisper.decoding",
+        "mlx_whisper.load_models",
+    ]:
+        sys.modules.setdefault(_mod, MagicMock())
+
 import numpy as np
 import pandas as pd
 import pytest
