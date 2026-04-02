@@ -1,3 +1,9 @@
+## v3.11.1 (2026-04-02)
+
+### Fix
+
+- **deps**: resolve incorrect import src
+
 ## v3.11.0 (2026-03-31)
 
 ### Feat
