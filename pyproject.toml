@@ -19,6 +19,7 @@ dependencies = [
     "tqdm>=4.0.0",
     "torch~=2.8.0",
     "torchaudio~=2.8.0",
+    "torchvision~=0.23.0",
     "transformers>=4.48.0",
 ]
 
@@ -46,7 +47,7 @@ include = ["whispermlx*"]
 # torchcodec (transitive dep of pyannote-audio >=4) has no wheels for Linux aarch64
 [tool.uv]
 override-dependencies = [
-    "torchcodec>=0.6.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'darwin' or sys_platform == 'win32'",
+    "torchcodec>=0.6.0,<0.8.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'darwin' or sys_platform == 'win32'",
 ]
 
 [tool.uv.sources]
