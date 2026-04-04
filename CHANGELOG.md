@@ -1,3 +1,9 @@
+## v3.12.0 (2026-04-04)
+
+### Feat
+
+- **alignment.py**: add Indonesian language model to alignment
+
 ## v3.11.2 (2026-04-04)
 
 ### Fix
