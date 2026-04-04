@@ -113,6 +113,41 @@ def load_align_model(
             align_model = Wav2Vec2ForCTC.from_pretrained(
                 model_name, cache_dir=model_dir, local_files_only=model_cache_only
             )
+        except OSError as e:
+            err_str = str(e).lower()
+            is_network_err = any(
+                k in err_str
+                for k in (
+                    "max retries",
+                    "connection",
+                    "httpsconnectionpool",
+                    "nodename nor servname",
+                )
+            )
+            if is_network_err:
+                logger.warning(
+                    "No internet connection — retrying alignment model load from local cache."
+                )
+                try:
+                    processor = Wav2Vec2Processor.from_pretrained(
+                        model_name, cache_dir=model_dir, local_files_only=True
+                    )
+                    align_model = Wav2Vec2ForCTC.from_pretrained(
+                        model_name, cache_dir=model_dir, local_files_only=True
+                    )
+                except Exception as cache_err:
+                    raise ValueError(
+                        f'Could not load "{model_name}" from local cache while offline. '
+                        f"Run with internet access first to download the model."
+                    ) from cache_err
+            else:
+                print(e)
+                print(
+                    "Error loading model from huggingface, check https://huggingface.co/models for finetuned wav2vec2.0 models"
+                )
+                raise ValueError(
+                    f'The chosen align_model "{model_name}" could not be found in huggingface (https://huggingface.co/models) or torchaudio (https://pytorch.org/audio/stable/pipelines.html#id14)'
+                ) from e
         except Exception as e:
             print(e)
             print(
