@@ -41,8 +41,12 @@ class Silero(Vad):
         if sample_rate != 16000:
             raise ValueError("Only 16000Hz sample rate is allowed")
 
+        waveform = audio["waveform"]
+        if not torch.is_tensor(waveform):
+            waveform = torch.as_tensor(waveform, dtype=torch.float32)
+
         timestamps = self.get_speech_timestamps(
-            audio["waveform"].to(self.device),
+            waveform.to(self.device),
             model=self.vad_pipeline,
             sampling_rate=sample_rate,
             max_speech_duration_s=self.chunk_size,
@@ -59,7 +63,9 @@ class Silero(Vad):
 
     @staticmethod
     def preprocess_audio(audio):
-        return audio
+        if torch.is_tensor(audio):
+            return audio.to(dtype=torch.float32)
+        return torch.as_tensor(audio, dtype=torch.float32)
 
     @staticmethod
     def merge_chunks(
