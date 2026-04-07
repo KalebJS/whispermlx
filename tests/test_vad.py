@@ -177,6 +177,98 @@ class TestSileroCall:
         assert result[1].start == pytest.approx(2.0)
 
 
+class TestSileroCallNumpyWaveform:
+    """Regression tests for the NumPy waveform bug fixed in PR #3."""
+
+    @pytest.fixture
+    def silero(self, monkeypatch):
+        fake_model = torch.nn.Module()
+        fake_model.to = lambda device: fake_model
+
+        monkeypatch.setattr(
+            "torch.hub.load",
+            lambda *a, **kw: (fake_model, (lambda *a, **kw: [], None, None, None, None)),
+        )
+        from whispermlx.vads.silero import Silero
+
+        instance = Silero(device="cpu", vad_onset=0.5, chunk_size=30, vad_offset=0.3)
+        instance.get_speech_timestamps = lambda *a, **kw: []
+        return instance
+
+    def test_numpy_waveform_does_not_raise(self, silero):
+        import numpy as np
+
+        audio = {"waveform": np.zeros(16000, dtype=np.float32), "sample_rate": 16000}
+        result = silero(audio)
+        assert result == []
+
+    def test_numpy_waveform_returns_segments(self, silero):
+        import numpy as np
+
+        silero.get_speech_timestamps = lambda *a, **kw: [{"start": 0, "end": 16000}]
+        audio = {"waveform": np.zeros(16000, dtype=np.float32), "sample_rate": 16000}
+        result = silero(audio)
+        assert len(result) == 1
+        assert result[0].start == pytest.approx(0.0)
+        assert result[0].end == pytest.approx(1.0)
+
+    def test_numpy_float64_waveform_converted_to_float32(self, silero, monkeypatch):
+        import numpy as np
+
+        captured = {}
+
+        def capturing_get_speech_timestamps(waveform, **kwargs):
+            captured["waveform"] = waveform
+            return []
+
+        silero.get_speech_timestamps = capturing_get_speech_timestamps
+        audio = {"waveform": np.zeros(16000, dtype=np.float64), "sample_rate": 16000}
+        silero(audio)
+        assert torch.is_tensor(captured["waveform"])
+        assert captured["waveform"].dtype == torch.float32
+
+
+class TestSileroPreprocessAudio:
+    @pytest.fixture
+    def silero_class(self, monkeypatch):
+        fake_model = torch.nn.Module()
+        fake_model.to = lambda device: fake_model
+        monkeypatch.setattr(
+            "torch.hub.load",
+            lambda *a, **kw: (fake_model, (lambda *a, **kw: [], None, None, None, None)),
+        )
+        from whispermlx.vads.silero import Silero
+
+        return Silero
+
+    def test_numpy_array_returns_float32_tensor(self, silero_class):
+        import numpy as np
+
+        audio = np.zeros(16000, dtype=np.float32)
+        result = silero_class.preprocess_audio(audio)
+        assert torch.is_tensor(result)
+        assert result.dtype == torch.float32
+
+    def test_numpy_float64_cast_to_float32(self, silero_class):
+        import numpy as np
+
+        audio = np.zeros(16000, dtype=np.float64)
+        result = silero_class.preprocess_audio(audio)
+        assert torch.is_tensor(result)
+        assert result.dtype == torch.float32
+
+    def test_tensor_passthrough_stays_float32(self, silero_class):
+        audio = torch.zeros(16000, dtype=torch.float32)
+        result = silero_class.preprocess_audio(audio)
+        assert torch.is_tensor(result)
+        assert result.dtype == torch.float32
+
+    def test_tensor_non_float32_cast_to_float32(self, silero_class):
+        audio = torch.zeros(16000, dtype=torch.float64)
+        result = silero_class.preprocess_audio(audio)
+        assert result.dtype == torch.float32
+
+
 class TestSileroMergeChunks:
     @pytest.fixture
     def silero_class(self, monkeypatch):

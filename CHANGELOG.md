@@ -1,3 +1,9 @@
+## v3.12.1 (2026-04-07)
+
+### Fix
+
+- normalize Silero waveforms before device transfer
+
 ## v3.12.0 (2026-04-04)
 
 ### Feat
