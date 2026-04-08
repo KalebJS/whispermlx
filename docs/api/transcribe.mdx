@@ -1,0 +1,146 @@
+---
+title: "MLXWhisperPipeline.transcribe"
+description: "Transcribe an audio file or numpy array using MLX Whisper on Apple Silicon."
+---
+
+```python
+pipeline.transcribe(audio, ...)
+```
+
+Transcribes audio by running VAD to segment speech, then passing each chunk through MLX Whisper. Returns a `TranscriptionResult` with segment-level text and timestamps.
+
+## Parameters
+
+<ParamField path="audio" type="str | np.ndarray" required>
+  Audio input. Either:
+  - A file path string (any format supported by ffmpeg: mp3, wav, m4a, flac, ogg, etc.)
+  - A NumPy array of shape `(samples,)` with `dtype=float32` at 16 kHz mono. Use [`load_audio`](/api/audio) to prepare a file as a numpy array.
+</ParamField>
+
+<ParamField path="language" type="string">
+  BCP-47 language code override (e.g. `"en"`, `"fr"`). When `None`, the language is auto-detected from the first processed chunk. Overrides the language set on the pipeline at load time.
+</ParamField>
+
+<ParamField path="task" type="string">
+  `"transcribe"` or `"translate"`. Overrides the task set on the pipeline at load time. When set to `"translate"`, output is always in English.
+</ParamField>
+
+<ParamField path="chunk_size" type="integer" default="30">
+  Maximum audio chunk size in seconds used when merging VAD segments. Smaller values reduce peak memory usage at the cost of more model calls.
+</ParamField>
+
+<ParamField path="print_progress" type="boolean" default="false">
+  Print percentage progress to stdout after each VAD chunk is processed.
+</ParamField>
+
+<ParamField path="verbose" type="boolean" default="false">
+  Print each segment's text and timestamps to stdout as transcription progresses.
+</ParamField>
+
+<ParamField path="progress_callback" type="callable">
+  A callable with signature `(pct: float) -> None`. Called after each VAD segment is processed with a value between `0.0` and `100.0`. See [`ProgressCallback`](/api/schema#progresscallback).
+</ParamField>
+
+## Returns
+
+A [`TranscriptionResult`](/api/schema#transcriptionresult) TypedDict:
+
+<ResponseField name="segments" type="list[SingleSegment]" required>
+  One entry per VAD chunk.
+
+  <Expandable title="SingleSegment fields">
+    <ResponseField name="start" type="float" required>
+      Segment start time in seconds.
+    </ResponseField>
+    <ResponseField name="end" type="float" required>
+      Segment end time in seconds.
+    </ResponseField>
+    <ResponseField name="text" type="string" required>
+      Transcribed text for this segment.
+    </ResponseField>
+    <ResponseField name="avg_logprob" type="float">
+      Average log probability across tokens in this segment. A rough confidence indicator — more negative values indicate lower confidence.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="language" type="string" required>
+  The language code used for transcription (e.g. `"en"`). Equal to the detected language when `language` was not specified.
+</ResponseField>
+
+## Full signature
+
+```python
+def transcribe(
+    self,
+    audio: str | np.ndarray,
+    batch_size: int | None = None,
+    num_workers: int = 0,
+    language: str | None = None,
+    task: str | None = None,
+    chunk_size: int = 30,
+    print_progress: bool = False,
+    combined_progress: bool = False,
+    verbose: bool = False,
+    progress_callback: ProgressCallback = None,
+) -> TranscriptionResult:
+```
+
+## Usage
+
+<CodeGroup>
+
+```python Basic
+result = model.transcribe("audio.mp3")
+
+for seg in result["segments"]:
+    print(f"[{seg['start']:.2f}s --> {seg['end']:.2f}s] {seg['text']}")
+```
+
+```python With options
+result = model.transcribe(
+    "audio.mp3",
+    language="en",
+    task="translate",
+    chunk_size=20,
+    verbose=True,
+)
+```
+
+```python Numpy array input
+import numpy as np
+from whispermlx import load_audio
+
+audio = load_audio("audio.mp3")  # float32 array at 16 kHz
+result = model.transcribe(audio)
+```
+
+```python Progress callback
+def on_progress(pct: float):
+    print(f"Transcription: {pct:.1f}%")
+
+result = model.transcribe("audio.mp3", progress_callback=on_progress)
+```
+
+</CodeGroup>
+
+<Note>
+  To get word-level timestamps, pass `result["segments"]` to [`whispermlx.align()`](/api/alignment) after transcription.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="load_model" icon="download" href="/api/load-model">
+    Load a model to get an MLXWhisperPipeline.
+  </Card>
+  <Card title="Alignment" icon="clock" href="/api/alignment">
+    Add word-level timestamps to transcription output.
+  </Card>
+  <Card title="Schema & Types" icon="code" href="/api/schema">
+    Full TypedDict definitions for TranscriptionResult.
+  </Card>
+  <Card title="Audio Utilities" icon="music" href="/api/audio">
+    Load audio files as numpy arrays.
+  </Card>
+</CardGroup>

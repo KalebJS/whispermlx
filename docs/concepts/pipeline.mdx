@@ -1,0 +1,105 @@
+---
+title: "The Pipeline"
+description: "How whisper(ml)x processes audio through VAD, ASR, alignment, and diarization stages."
+---
+
+whisper(ml)x processes audio through up to four sequential stages. Each stage builds on the output of the previous one, and later stages are optional depending on what you need.
+
+```
+Audio → VAD → MLX Whisper (ASR) → Alignment → Diarization → Output
+```
+
+<Steps>
+  <Step title="Stage 1 — Voice Activity Detection (VAD)">
+    The pipeline begins by identifying which portions of the audio actually contain speech. Raw audio is loaded at 16 kHz and passed to the VAD model, which returns a list of speech segments with start and end timestamps.
+
+    Silence, noise, and non-speech regions are excluded before any transcription happens. This prevents Whisper from hallucinating text on silent sections and reduces the total amount of audio that needs to be processed.
+
+    Adjacent VAD segments are merged into chunks up to `chunk_size` seconds (default: 30 s) before being sent to Whisper. Two VAD backends are available: **pyannote** (default) and **silero**. See [Voice Activity Detection](/concepts/vad) for details.
+  </Step>
+  <Step title="Stage 2 — ASR with MLX Whisper">
+    Each merged VAD chunk is transcribed independently by `mlx_whisper.transcribe()`. The `MLXWhisperPipeline` class iterates over the chunks, extracts the corresponding audio slice, calls the model, and collects the resulting text and timing into a list of `SingleSegment` objects.
+
+    MLX Whisper runs on Apple Silicon's GPU automatically. The `device` parameter you pass to `load_model()` controls only where the VAD model runs — not the Whisper inference itself. Parameters like `compute_type`, `device_index`, and `threads` are accepted for API compatibility but have no effect on MLX inference.
+
+    The result of this stage is a `TranscriptionResult`:
+
+    ```python
+    class TranscriptionResult(TypedDict):
+        segments: list[SingleSegment]   # Each VAD chunk → one segment
+        language: str                   # Detected or specified language
+
+    class SingleSegment(TypedDict):
+        start: float
+        end: float
+        text: str
+        avg_logprob: NotRequired[float]
+    ```
+  </Step>
+  <Step title="Stage 3 — Alignment (optional)">
+    Word-level timestamps are not produced by Whisper directly. The alignment stage uses a wav2vec2 model (loaded via `load_align_model()`) to perform forced alignment, mapping each word in the transcription to its precise position in the audio.
+
+    Alignment is language-specific. A default wav2vec2 model is selected automatically for 30+ languages. If no model exists for a language, alignment is skipped and you will see an error. Translation output (`--task translate`) cannot be aligned and skips this stage automatically.
+
+    The result is an `AlignedTranscriptionResult`:
+
+    ```python
+    class AlignedTranscriptionResult(TypedDict):
+        segments: list[SingleAlignedSegment]
+        word_segments: list[SingleWordSegment]
+
+    class SingleAlignedSegment(TypedDict):
+        start: float
+        end: float
+        text: str
+        avg_logprob: NotRequired[float]
+        words: list[SingleWordSegment]
+        chars: list[SingleCharSegment] | None
+
+    class SingleWordSegment(TypedDict):
+        word: str
+        start: float
+        end: float
+        score: float
+    ```
+  </Step>
+  <Step title="Stage 4 — Diarization (optional)">
+    When `--diarize` is enabled, the `DiarizationPipeline` class uses pyannote to identify who is speaking at each moment in the audio. The default model is `pyannote/speaker-diarization-community-1`.
+
+    Speaker labels are then assigned to each word and segment by `assign_word_speakers()`. This function builds an `IntervalTree` from the diarization output — a sorted array with binary search — giving O(log n) speaker lookup instead of O(n) linear scan. For long-form content such as multi-hour podcasts, this provides a roughly 228x speedup over a naive scan.
+
+    Each segment and word in the output gains a `"speaker"` field (e.g., `"SPEAKER_00"`, `"SPEAKER_01"`).
+  </Step>
+</Steps>
+
+## Memory management
+
+Transcription, alignment, and diarization each load their own model weights. To avoid keeping multiple large models in memory simultaneously, `transcribe_task()` explicitly deletes each model and calls `gc.collect()` before loading the next:
+
+```python
+# Stage 1 + 2: VAD & ASR
+model = load_model(...)
+result = model.transcribe(audio)
+
+del model
+gc.collect()  # Unload Whisper and VAD before loading alignment model
+
+# Stage 3: Alignment
+align_model, align_metadata = load_align_model(...)
+result = align(result["segments"], align_model, ...)
+
+del align_model
+gc.collect()  # Unload alignment model before loading diarization model
+
+# Stage 4: Diarization
+diarize_model = DiarizationPipeline(...)
+```
+
+## Data flow summary
+
+| Stage | Input | Output type |
+|---|---|---|
+| VAD | Raw audio (16 kHz numpy array) | List of `{start, end}` speech chunks |
+| ASR | Audio slice per VAD chunk | `TranscriptionResult` |
+| Alignment | `TranscriptionResult` + raw audio | `AlignedTranscriptionResult` |
+| Diarization | Audio file + `AlignedTranscriptionResult` | Same result with `speaker` fields added |

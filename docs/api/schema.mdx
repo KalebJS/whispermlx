@@ -1,0 +1,309 @@
+---
+title: "Schema & types"
+description: "TypedDict definitions and type aliases used throughout the whisper(ml)x API."
+---
+
+All public types are defined in `whispermlx.schema`. Import them for type annotations or runtime `isinstance` checks.
+
+```python
+from whispermlx.schema import (
+    TranscriptionResult,
+    AlignedTranscriptionResult,
+    SingleSegment,
+    SingleAlignedSegment,
+    SingleWordSegment,
+    SingleCharSegment,
+    ProgressCallback,
+)
+```
+
+---
+
+## TranscriptionResult
+
+Returned by `MLXWhisperPipeline.transcribe()`.
+
+```python
+class TranscriptionResult(TypedDict):
+    segments: list[SingleSegment]
+    language: str
+```
+
+<ResponseField name="segments" type="list[SingleSegment]" required>
+  One segment per VAD chunk. Each segment covers a continuous span of speech.
+</ResponseField>
+
+<ResponseField name="language" type="string" required>
+  The language code used for transcription (e.g. `"en"`, `"fr"`). Equal to the auto-detected language when no language was specified at load or call time.
+</ResponseField>
+
+---
+
+## AlignedTranscriptionResult
+
+Returned by `whispermlx.align()`.
+
+```python
+class AlignedTranscriptionResult(TypedDict):
+    segments: list[SingleAlignedSegment]
+    word_segments: list[SingleWordSegment]
+```
+
+<ResponseField name="segments" type="list[SingleAlignedSegment]" required>
+  Segments with word-level timestamps added. See [`SingleAlignedSegment`](#singlealignedsegment).
+</ResponseField>
+
+<ResponseField name="word_segments" type="list[SingleWordSegment]" required>
+  Flat list of all word segments across every segment. Useful for iterating words without nesting.
+</ResponseField>
+
+---
+
+## SingleSegment
+
+One segment of speech produced by `transcribe()`.
+
+```python
+class SingleSegment(TypedDict):
+    start: float
+    end: float
+    text: str
+    avg_logprob: NotRequired[float]
+```
+
+<ResponseField name="start" type="float" required>
+  Segment start time in seconds.
+</ResponseField>
+
+<ResponseField name="end" type="float" required>
+  Segment end time in seconds.
+</ResponseField>
+
+<ResponseField name="text" type="string" required>
+  Transcribed text for this segment.
+</ResponseField>
+
+<ResponseField name="avg_logprob" type="float">
+  Average log probability across all tokens in this segment. More negative values indicate lower model confidence. Not always present.
+</ResponseField>
+
+---
+
+## SingleAlignedSegment
+
+A segment after forced alignment — extends `SingleSegment` with word and character timestamps.
+
+```python
+class SingleAlignedSegment(TypedDict):
+    start: float
+    end: float
+    text: str
+    avg_logprob: NotRequired[float]
+    words: list[SingleWordSegment]
+    chars: list[SingleCharSegment] | None
+```
+
+<ResponseField name="start" type="float" required>
+  Segment start time in seconds.
+</ResponseField>
+
+<ResponseField name="end" type="float" required>
+  Segment end time in seconds.
+</ResponseField>
+
+<ResponseField name="text" type="string" required>
+  Segment text.
+</ResponseField>
+
+<ResponseField name="words" type="list[SingleWordSegment]" required>
+  Word-level timestamp entries for this segment. See [`SingleWordSegment`](#singlewordsegment).
+</ResponseField>
+
+<ResponseField name="chars" type="list[SingleCharSegment] | None">
+  Per-character timestamp entries. Only populated when `return_char_alignments=True` is passed to `align()`. `None` otherwise. See [`SingleCharSegment`](#singlecharsegment).
+</ResponseField>
+
+<ResponseField name="avg_logprob" type="float">
+  Average log probability from Whisper. Not always present.
+</ResponseField>
+
+---
+
+## SingleWordSegment
+
+A single word with alignment timestamps.
+
+```python
+class SingleWordSegment(TypedDict):
+    word: str
+    start: float
+    end: float
+    score: float
+```
+
+<ResponseField name="word" type="string" required>
+  The word text, including surrounding punctuation if any.
+</ResponseField>
+
+<ResponseField name="start" type="float">
+  Word start time in seconds. May be absent if the word could not be aligned.
+</ResponseField>
+
+<ResponseField name="end" type="float">
+  Word end time in seconds. May be absent if the word could not be aligned.
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  Alignment confidence score between 0 and 1. Higher is more confident.
+</ResponseField>
+
+---
+
+## SingleCharSegment
+
+A single character with alignment timestamps. Only present when `return_char_alignments=True` is passed to `align()`.
+
+```python
+class SingleCharSegment(TypedDict):
+    char: str
+    start: float
+    end: float
+    score: float
+```
+
+<ResponseField name="char" type="string" required>
+  The character.
+</ResponseField>
+
+<ResponseField name="start" type="float">
+  Character start time in seconds.
+</ResponseField>
+
+<ResponseField name="end" type="float">
+  Character end time in seconds.
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  Alignment confidence score between 0 and 1.
+</ResponseField>
+
+---
+
+## ProgressCallback
+
+Type alias for progress callbacks accepted by `transcribe()`, `align()`, and `DiarizationPipeline`.
+
+```python
+ProgressCallback = Callable[[float], None] | None
+```
+
+The callable receives a single `float` argument in the range `0.0` to `100.0` representing the percentage of work completed. Passing `None` disables progress reporting.
+
+---
+
+## Usage examples
+
+```python
+from whispermlx.schema import TranscriptionResult, AlignedTranscriptionResult
+
+# Type-safe result handling
+result: TranscriptionResult = model.transcribe("audio.mp3")
+for seg in result["segments"]:
+    print(f"{seg['start']:.2f}s: {seg['text']}")
+```
+
+```python
+# Working with aligned results
+aligned: AlignedTranscriptionResult = whispermlx.align(
+    result["segments"], model_a, metadata, "audio.mp3", device="cpu"
+)
+
+# Iterate word_segments for flat word access
+for word in aligned["word_segments"]:
+    start = word.get("start", "?")
+    end = word.get("end", "?")
+    score = word.get("score", 0.0)
+    print(f"{word['word']}: {start}s – {end}s (score: {score:.3f})")
+```
+
+```python
+# Using ProgressCallback
+from whispermlx.schema import ProgressCallback
+
+def my_callback(pct: float) -> None:
+    print(f"Progress: {pct:.1f}%")
+
+cb: ProgressCallback = my_callback
+result = model.transcribe("audio.mp3", progress_callback=cb)
+```
+
+---
+
+## Logging
+
+whisper(ml)x uses a centralized logger under the `"whispermlx"` namespace. Two functions are exported from the top-level package for configuring and accessing it.
+
+### setup_logging
+
+```python
+whispermlx.setup_logging(level="info", log_file=None)
+```
+
+Configures the `"whispermlx"` logger. Call this once at the start of your application before any other whisper(ml)x calls.
+
+<ParamField path="level" type="string" default="info">
+  Logging level. Accepted values: `"debug"`, `"info"`, `"warning"`, `"error"`, `"critical"`.
+</ParamField>
+
+<ParamField path="log_file" type="string">
+  Optional path to a log file. When set, log output is written to both the console and this file. When `None`, logs only to stdout.
+</ParamField>
+
+```python
+import whispermlx
+
+# Log everything from INFO level and above
+whispermlx.setup_logging(level="info")
+
+# Log to a file as well
+whispermlx.setup_logging(level="debug", log_file="whispermlx.log")
+```
+
+### get_logger
+
+```python
+whispermlx.get_logger(name)
+```
+
+Returns a `logging.Logger` instance configured with the whisper(ml)x handler. Use this to emit log messages that follow the same format as internal whisper(ml)x logs.
+
+<ParamField path="name" type="string" required>
+  Logger name. Typically pass `__name__` from your calling module.
+</ParamField>
+
+```python
+import whispermlx
+
+logger = whispermlx.get_logger(__name__)
+logger.info("Starting transcription pipeline")
+```
+
+<Note>
+  The logger propagation is disabled to prevent duplicate messages in environments that configure the root logger. If you use a custom logging setup, call `setup_logging()` after configuring the root logger.
+</Note>
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MLXWhisperPipeline.transcribe" icon="microphone" href="/api/transcribe">
+    Returns TranscriptionResult.
+  </Card>
+  <Card title="Alignment" icon="clock" href="/api/alignment">
+    Returns AlignedTranscriptionResult.
+  </Card>
+  <Card title="Diarization" icon="users" href="/api/diarization">
+    Adds speaker fields to segments and words.
+  </Card>
+</CardGroup>

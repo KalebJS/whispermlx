@@ -1,0 +1,106 @@
+---
+title: "Audio utilities"
+description: "Load audio files as 16 kHz mono numpy arrays for use with whisper(ml)x."
+---
+
+## load_audio
+
+```python
+whispermlx.load_audio(file)
+```
+
+Opens an audio file and returns it as a 16 kHz mono float32 numpy array. Uses ffmpeg internally to decode the file, down-mix to mono, and resample to 16 kHz. The returned array can be passed directly to `model.transcribe()`, `align()`, or `DiarizationPipeline`.
+
+### Parameters
+
+<ParamField path="file" type="string" required>
+  Path to the audio file. Accepts any format supported by ffmpeg, including mp3, wav, m4a, flac, ogg, opus, and aac.
+</ParamField>
+
+<ParamField path="sr" type="integer" default="16000">
+  Target sample rate for resampling. Defaults to `SAMPLE_RATE` (16000 Hz). All whisper(ml)x functions expect 16 kHz audio — only change this if you have a specific reason to resample to a different rate.
+</ParamField>
+
+### Returns
+
+A NumPy array of shape `(samples,)` with `dtype=float32`. Values are normalized to the range `[-1.0, 1.0]`.
+
+### Full signature
+
+```python
+def load_audio(file: str, sr: int = SAMPLE_RATE) -> np.ndarray:
+```
+
+---
+
+## SAMPLE_RATE
+
+```python
+from whispermlx.audio import SAMPLE_RATE
+```
+
+The sample rate expected by all whisper(ml)x functions: **16000 Hz**.
+
+All audio passed to `transcribe()`, `align()`, and `DiarizationPipeline` must be at this sample rate. `load_audio()` resamples to this rate automatically.
+
+---
+
+## Usage
+
+```python
+from whispermlx import load_audio
+from whispermlx.audio import SAMPLE_RATE
+
+audio = load_audio("audio.mp3")
+
+print(f"Sample rate: {SAMPLE_RATE} Hz")
+print(f"Duration: {len(audio) / SAMPLE_RATE:.2f}s")
+print(f"Shape: {audio.shape}, dtype: {audio.dtype}")
+# Shape: (441000,), dtype: float32  (for a ~27.6s file)
+```
+
+<CodeGroup>
+
+```python Pass to transcribe
+import whispermlx
+from whispermlx import load_audio
+
+audio = load_audio("audio.mp3")
+model = whispermlx.load_model("large-v3", device="cpu")
+result = model.transcribe(audio)
+```
+
+```python Pass to align
+import whispermlx
+from whispermlx import load_audio
+
+audio = load_audio("audio.mp3")
+model_a, metadata = whispermlx.load_align_model("en", "cpu")
+aligned = whispermlx.align(result["segments"], model_a, metadata, audio, device="cpu")
+```
+
+```python Pass to DiarizationPipeline
+from whispermlx import load_audio
+from whispermlx.diarize import DiarizationPipeline
+
+audio = load_audio("audio.mp3")
+diarize_model = DiarizationPipeline(token="hf_YOUR_TOKEN", device="mps")
+diarize_df = diarize_model(audio)
+```
+
+</CodeGroup>
+
+<Note>
+  ffmpeg must be installed and available on your `PATH`. On macOS with Homebrew: `brew install ffmpeg`. `load_audio` raises a `RuntimeError` if ffmpeg is not found or if the file cannot be decoded.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MLXWhisperPipeline.transcribe" icon="microphone" href="/api/transcribe">
+    Pass audio arrays directly to transcription.
+  </Card>
+  <Card title="Schema & Types" icon="code" href="/api/schema">
+    TypedDict definitions for transcription output.
+  </Card>
+</CardGroup>

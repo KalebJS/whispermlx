@@ -1,0 +1,70 @@
+---
+title: "Introduction"
+description: "whisper(ml)x is a fast, accurate speech recognition library for Apple Silicon — with word-level timestamps and speaker diarization."
+---
+
+whisper(ml)x is a fork of [WhisperX](https://github.com/m-bain/whisperX) by Max Bain et al. that replaces the inference backend with [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper), running natively on Apple Silicon via MLX. Word-level timestamps, speaker diarization, and voice activity detection are all retained from the original.
+
+## Why use whisper(ml)x
+
+<CardGroup cols={2}>
+  <Card title="MLX inference" icon="microchip">
+    Runs transcription on the Apple Silicon GPU via unified memory — no CUDA, no discrete GPU required.
+  </Card>
+  <Card title="Word-level timestamps" icon="clock">
+    Forced alignment via wav2vec2 produces precise start and end times for every word in the transcript.
+  </Card>
+  <Card title="Speaker diarization" icon="users">
+    Identify who spoke when using pyannote-audio's speaker diarization pipeline.
+  </Card>
+  <Card title="VAD preprocessing" icon="waveform">
+    Voice activity detection (pyannote or silero) strips silence before transcription, reducing inference time on long recordings.
+  </Card>
+</CardGroup>
+
+## Architecture overview
+
+whisper(ml)x runs a three-stage pipeline on your audio:
+
+<Steps>
+  <Step title="VAD — Voice activity detection">
+    Audio is preprocessed by pyannote or silero VAD to detect speech segments. Silence is discarded and speech chunks are merged into 30-second windows before being passed to the ASR stage.
+  </Step>
+  <Step title="ASR — Transcription">
+    Each speech segment is transcribed by mlx-whisper, which runs natively on the Apple Silicon GPU. The result is a list of `SingleSegment` dicts containing `start`, `end`, and `text`.
+  </Step>
+  <Step title="Alignment and diarization (optional)">
+    A wav2vec2 alignment model attaches word-level timestamps to each segment, producing `SingleAlignedSegment` dicts. Optionally, a pyannote diarization model assigns speaker labels to each word.
+  </Step>
+</Steps>
+
+## System requirements
+
+- **Apple Silicon Mac** — M1, M2, M3, or M4 chip (required for MLX inference)
+- **macOS** — any version supported by your chip
+- **Python** — 3.10, 3.11, 3.12, or 3.13
+
+<Note>
+  MLX only runs on Apple Silicon. whisper(ml)x will not work on Intel Macs or non-macOS platforms for transcription. The `device` parameter controls PyTorch models (VAD, alignment, diarization) only — MLX Whisper always uses the Apple Silicon GPU automatically.
+</Note>
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="bolt" href="/quickstart">
+    Transcribe your first audio file in under five minutes.
+  </Card>
+  <Card title="Installation" icon="box" href="/installation">
+    Install with pip or uv and configure speaker diarization.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/overview">
+    Explore every command-line flag and option.
+  </Card>
+  <Card title="Python API" icon="code" href="/api/load-model">
+    Integrate transcription, alignment, and diarization into your code.
+  </Card>
+</CardGroup>
+
+## Acknowledgements
+
+whisper(ml)x is built on top of [WhisperX](https://github.com/m-bain/whisperX) by Max Bain et al., [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper), [pyannote-audio](https://github.com/pyannote/pyannote-audio), and [OpenAI Whisper](https://github.com/openai/whisper).

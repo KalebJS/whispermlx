@@ -1,0 +1,101 @@
+---
+title: "Voice Activity Detection"
+description: "How VAD identifies speech segments in audio before passing them to Whisper, and how to configure it."
+---
+
+Voice Activity Detection (VAD) is the first stage of the whisper(ml)x pipeline. Before any transcription happens, the VAD model scans the full audio and identifies the regions that contain speech.
+
+## What VAD does
+
+Running Whisper on silence or background noise causes it to hallucinate text. VAD solves this by:
+
+1. Scanning the full audio waveform and producing a list of `{start, end}` speech segments.
+2. Merging adjacent segments into chunks no longer than `chunk_size` seconds.
+3. Passing only those chunks to Whisper — skipping silence entirely.
+
+This reduces transcription errors on quiet or noisy recordings and lowers inference time by not processing non-speech regions.
+
+## Two VAD backends
+
+whisper(ml)x supports two VAD backends. Both implement the same abstract `Vad` interface and produce the same segment format.
+
+<CardGroup cols={2}>
+  <Card title="Pyannote (default)" icon="shield-check">
+    Loads a local model from `whispermlx/assets/pytorch_model.bin`. More accurate on a wide range of audio types, including noisy environments. Uses hysteresis thresholding with a min-cut operation to avoid creating segments longer than `chunk_size`.
+  </Card>
+  <Card title="Silero" icon="zap">
+    Loads via `torch.hub` from `snakers4/silero-vad`. Lighter weight with no bundled assets. Requires network access on first use. Works well for clean recordings.
+  </Card>
+</CardGroup>
+
+<Note>
+  The `device` parameter in `load_model()` controls where the VAD model runs, not MLX Whisper. For Apple Silicon, `"cpu"` is recommended for VAD. MLX inference always runs on the GPU automatically.
+</Note>
+
+## Key parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `vad_onset` | `0.500` | Probability threshold above which a frame is considered the start of a speech segment. |
+| `vad_offset` | `0.363` | Probability threshold below which an active segment is considered to have ended. |
+| `chunk_size` | `30` | Maximum merged segment length in seconds. VAD segments are merged until this limit is reached. |
+
+`vad_onset` and `vad_offset` implement hysteresis: a higher onset prevents false starts, while a lower offset allows the model to continue a speech segment through brief dips in confidence.
+
+<Tip>
+  For difficult audio — noisy environments, quiet speakers, or recordings with long pauses — try reducing `vad_onset` to `0.3`–`0.4` to catch more speech, and `vad_offset` to `0.2`–`0.3` to avoid cutting off words at the end of sentences.
+</Tip>
+
+## Python API
+
+Pass VAD configuration to `load_model()` via the `vad_method` and `vad_options` arguments:
+
+```python
+import whispermlx
+
+model = whispermlx.load_model(
+    "large-v3",
+    device="cpu",
+    vad_method="silero",  # or "pyannote" (default)
+    vad_options={
+        "vad_onset": 0.4,
+        "vad_offset": 0.3,
+        "chunk_size": 30,
+    },
+)
+
+result = model.transcribe("audio.mp3")
+```
+
+You can also pass a pre-instantiated VAD model via the `vad_model` argument. When `vad_model` is set, `vad_method` is ignored:
+
+```python
+from whispermlx.vads import Silero
+
+vad = Silero(device="cpu", vad_onset=0.4, vad_offset=0.3, chunk_size=30)
+
+model = whispermlx.load_model(
+    "large-v3",
+    device="cpu",
+    vad_model=vad,
+)
+```
+
+## CLI
+
+Use the `--vad_method`, `--vad_onset`, `--vad_offset`, and `--chunk_size` flags:
+
+```bash
+whispermlx audio.mp3 \
+  --model large-v3 \
+  --vad_method silero \
+  --vad_onset 0.4 \
+  --vad_offset 0.3 \
+  --chunk_size 30
+```
+
+To use pyannote (the default), you can omit `--vad_method` entirely:
+
+```bash
+whispermlx audio.mp3 --model large-v3
+```

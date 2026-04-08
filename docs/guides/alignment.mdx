@@ -1,0 +1,257 @@
+---
+title: "Word-level Alignment"
+description: "Add precise word-level timestamps to transcription segments using wav2vec2 forced alignment."
+---
+
+Alignment takes a transcription result and computes the exact start and end time for every word. It uses a wav2vec2 phoneme recognition model to perform forced alignment between the audio signal and the text, producing per-word timestamps with confidence scores.
+
+## How it works
+
+After transcription, segments have start and end times for each chunk of speech but no per-word timestamps. Alignment runs a separate wav2vec2 model over the same audio and uses the CTC forced alignment algorithm to map each character to a point in time, then groups characters into words.
+
+The result adds a `words` list to every segment and a flat `word_segments` list to the top-level result.
+
+## Step-by-step guide
+
+<Steps>
+  <Step title="Transcribe the audio">
+    Start with a standard transcription result:
+
+    ```python
+    import whispermlx
+
+    model = whispermlx.load_model("large-v3", device="cpu")
+    result = model.transcribe("audio.mp3")
+    ```
+  </Step>
+
+  <Step title="Load the alignment model">
+    Load the wav2vec2 model for the detected language. Pass `result["language"]` to use the auto-detected language:
+
+    ```python
+    model_a, metadata = whispermlx.load_align_model(
+        language_code=result["language"],
+        device="cpu",
+    )
+    ```
+
+    `load_align_model` selects the appropriate wav2vec2 checkpoint automatically based on the language code. You can override it by passing `model_name`:
+
+    ```python
+    model_a, metadata = whispermlx.load_align_model(
+        language_code="en",
+        device="cpu",
+        model_name="WAV2VEC2_ASR_BASE_960H",  # torchaudio bundle name or HF repo ID
+    )
+    ```
+  </Step>
+
+  <Step title="Run alignment">
+    Pass the transcription segments, alignment model, metadata, and audio path to `whispermlx.align`:
+
+    ```python
+    result = whispermlx.align(
+        result["segments"],
+        model_a,
+        metadata,
+        "audio.mp3",
+        device="cpu",
+    )
+    ```
+  </Step>
+
+  <Step title="Access word timestamps">
+    The aligned result contains per-word timestamps on each segment and in a flat list:
+
+    ```python
+    # Per-word data on each segment
+    for segment in result["segments"]:
+        for word in segment["words"]:
+            print(f"[{word.get('start', '?'):.2f} --> {word.get('end', '?'):.2f}] {word['word']}")
+
+    # Flat list of all words
+    for word in result["word_segments"]:
+        print(word)
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+```python
+import whispermlx
+
+# Step 1: Transcribe
+model = whispermlx.load_model("large-v3", device="cpu")
+result = model.transcribe("audio.mp3")
+
+# Step 2: Load alignment model
+model_a, metadata = whispermlx.load_align_model(
+    language_code=result["language"],
+    device="cpu",
+)
+
+# Step 3: Align
+result = whispermlx.align(
+    result["segments"],
+    model_a,
+    metadata,
+    "audio.mp3",
+    device="cpu",
+)
+
+# Step 4: Use results
+for segment in result["segments"]:
+    print(f"\n[{segment['start']:.2f} --> {segment['end']:.2f}] {segment['text']}")
+    for word in segment["words"]:
+        start = word.get("start", "?")
+        end = word.get("end", "?")
+        score = word.get("score", "?")
+        print(f"  {word['word']}  ({start} --> {end}, score={score})")
+```
+
+## Supported languages
+
+Alignment models are available for over 30 languages. The model is selected automatically from the language code:
+
+| Language | Code | Backend |
+|---|---|---|
+| English | `en` | torchaudio |
+| French | `fr` | torchaudio |
+| German | `de` | torchaudio |
+| Spanish | `es` | torchaudio |
+| Italian | `it` | torchaudio |
+| Japanese | `ja` | Hugging Face |
+| Chinese | `zh` | Hugging Face |
+| Dutch | `nl` | Hugging Face |
+| Ukrainian | `uk` | Hugging Face |
+| Portuguese | `pt` | Hugging Face |
+| Arabic | `ar` | Hugging Face |
+| Czech | `cs` | Hugging Face |
+| Russian | `ru` | Hugging Face |
+| Polish | `pl` | Hugging Face |
+| Hungarian | `hu` | Hugging Face |
+| Finnish | `fi` | Hugging Face |
+| Persian | `fa` | Hugging Face |
+| Greek | `el` | Hugging Face |
+| Turkish | `tr` | Hugging Face |
+| Danish | `da` | Hugging Face |
+| Hebrew | `he` | Hugging Face |
+| Vietnamese | `vi` | Hugging Face |
+| Korean | `ko` | Hugging Face |
+| Urdu | `ur` | Hugging Face |
+| Telugu | `te` | Hugging Face |
+| Hindi | `hi` | Hugging Face |
+| Catalan | `ca` | Hugging Face |
+| Malayalam | `ml` | Hugging Face |
+| Norwegian Bokmål | `no` | Hugging Face |
+| Norwegian Nynorsk | `nn` | Hugging Face |
+| Slovak | `sk` | Hugging Face |
+| Slovenian | `sl` | Hugging Face |
+| Croatian | `hr` | Hugging Face |
+| Romanian | `ro` | Hugging Face |
+| Basque | `eu` | Hugging Face |
+| Galician | `gl` | Hugging Face |
+| Georgian | `ka` | Hugging Face |
+| Latvian | `lv` | Hugging Face |
+| Tagalog | `tl` | Hugging Face |
+| Swedish | `sv` | Hugging Face |
+| Indonesian | `id` | Hugging Face |
+
+If no default model exists for a language, pass a custom wav2vec2 model via `--align_model` (CLI) or the `model_name` parameter.
+
+## AlignedTranscriptionResult structure
+
+`whispermlx.align()` returns an `AlignedTranscriptionResult`:
+
+```python
+class AlignedTranscriptionResult(TypedDict):
+    segments: list[SingleAlignedSegment]
+    word_segments: list[SingleWordSegment]
+```
+
+Each `SingleAlignedSegment` extends the base segment with word data:
+
+```python
+class SingleAlignedSegment(TypedDict):
+    start: float
+    end: float
+    text: str
+    avg_logprob: float          # Optional — carried from transcription
+    words: list[SingleWordSegment]
+    chars: list[SingleCharSegment] | None  # Only when return_char_alignments=True
+```
+
+Each `SingleWordSegment` contains:
+
+```python
+class SingleWordSegment(TypedDict):
+    word: str     # The word text
+    start: float  # Start time in seconds
+    end: float    # End time in seconds
+    score: float  # Alignment confidence (0–1)
+```
+
+<Note>
+  `start`, `end`, and `score` are optional on `SingleWordSegment` — they may be absent for words that could not be aligned (e.g., words containing only characters not present in the model vocabulary). Use `.get("start")` rather than direct key access.
+</Note>
+
+## Interpolation methods
+
+When a word cannot be aligned directly, whisper(ml)x uses an interpolation strategy to fill in the missing timestamp. Control this with `--interpolate_method` (CLI) or the `interpolate_method` parameter:
+
+| Method | Behavior |
+|---|---|
+| `nearest` (default) | Assign the timestamp of the nearest aligned word |
+| `linear` | Linearly interpolate between the surrounding aligned words |
+| `ignore` | Leave unaligned words without timestamps |
+
+```bash
+whispermlx audio.mp3 --model large-v3 --interpolate_method linear
+```
+
+## CLI options
+
+| Flag | Description |
+|---|---|
+| `--no_align` | Skip alignment entirely |
+| `--align_model MODEL` | Custom wav2vec2 model name or Hugging Face repo ID |
+| `--interpolate_method` | Timestamp interpolation for unaligned words (`nearest`, `linear`, `ignore`) |
+| `--return_char_alignments` | Include character-level timestamps in the JSON output |
+
+### Skipping alignment
+
+```bash
+whispermlx audio.mp3 --model large-v3 --no_align
+```
+
+When alignment is skipped, output formats that depend on word-level timestamps (`--max_line_width`, `--max_line_count`, `--highlight_words`) are unavailable.
+
+### Character-level alignments
+
+```bash
+whispermlx audio.mp3 --model large-v3 --return_char_alignments
+```
+
+This adds a `chars` field to each segment in the JSON output containing per-character timestamps.
+
+## Caveats
+
+<Warning>
+  The `translate` task is incompatible with alignment. When `--task translate` is set, alignment is disabled automatically. Forced alignment requires the transcript text to match the spoken words in the original language.
+</Warning>
+
+<Warning>
+  Japanese (`ja`) and Chinese (`zh`) do not use spaces between words. For these languages, each character is treated as its own word during alignment. Segment boundaries and word counts will differ from space-delimited languages.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Speaker diarization" icon="users" href="/guides/diarization">
+    Assign speaker labels to aligned word segments.
+  </Card>
+  <Card title="Output formats" icon="file-export" href="/guides/output-formats">
+    Use word timestamps to generate highlighted SRT/VTT subtitles.
+  </Card>
+</CardGroup>

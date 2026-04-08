@@ -1,0 +1,199 @@
+---
+title: "Transcription"
+description: "Transcribe audio files using the CLI or Python API with whisper(ml)x."
+---
+
+whisper(ml)x transcribes audio by running voice activity detection (VAD) to segment speech, then passing each chunk through an MLX Whisper model running on the Apple Silicon GPU.
+
+## CLI usage
+
+The simplest way to transcribe is to pass an audio file and a model name:
+
+```bash
+whispermlx audio.mp3 --model large-v3
+```
+
+Specify the language, task, and output directory explicitly:
+
+```bash
+whispermlx audio.mp3 --model large-v3 --language en --task transcribe --output_dir ./output
+```
+
+Transcribe multiple files at once by listing them as positional arguments:
+
+```bash
+whispermlx file1.mp3 file2.wav --model large-v3 --output_dir ./output
+```
+
+## Python API
+
+Load a model with `whispermlx.load_model`, then call `.transcribe()` on it:
+
+```python
+import whispermlx
+
+model = whispermlx.load_model("large-v3", device="cpu")
+result = model.transcribe("audio.mp3")
+
+# Access segments
+for segment in result["segments"]:
+    print(f"[{segment['start']:.2f} --> {segment['end']:.2f}] {segment['text']}")
+```
+
+The `device` parameter controls where the VAD model runs. MLX Whisper inference always uses the Apple Silicon GPU automatically — you do not need to configure it.
+
+## Available models
+
+Pass a short model name or a full Hugging Face repo ID:
+
+| Short name | Hugging Face repo |
+|---|---|
+| `tiny` | `mlx-community/whisper-tiny-mlx` |
+| `base` | `mlx-community/whisper-base-mlx` |
+| `small` | `mlx-community/whisper-small-mlx` |
+| `medium` | `mlx-community/whisper-medium-mlx` |
+| `large` | `mlx-community/whisper-large-mlx` |
+| `large-v2` | `mlx-community/whisper-large-v2-mlx` |
+| `large-v3` | `mlx-community/whisper-large-v3-mlx` |
+| `large-v3-turbo` / `turbo` | `mlx-community/whisper-large-v3-turbo` |
+
+English-only variants (`tiny.en`, `base.en`, `small.en`, `medium.en`) are also available.
+
+## Transcription options
+
+### Language detection
+
+By default whisper(ml)x detects the spoken language automatically from the first audio chunk. Set `--language` (CLI) or pass `language=` to `load_model` or `.transcribe()` to skip detection:
+
+<CodeGroup>
+
+```bash CLI
+whispermlx audio.mp3 --model large-v3 --language fr
+```
+
+```python Python
+model = whispermlx.load_model("large-v3", device="cpu", language="fr")
+result = model.transcribe("audio.mp3")
+```
+
+</CodeGroup>
+
+### Task
+
+The `task` parameter controls whether to produce a transcript in the source language or an English translation:
+
+| Value | Behavior |
+|---|---|
+| `transcribe` (default) | Transcribe in the original spoken language |
+| `translate` | Translate to English |
+
+<CodeGroup>
+
+```bash CLI
+whispermlx audio.mp3 --model large-v3 --task translate
+```
+
+```python Python
+model = whispermlx.load_model("large-v3", device="cpu", task="translate")
+```
+
+</CodeGroup>
+
+<Note>
+  When `task` is set to `translate`, alignment is skipped automatically because word-level alignment cannot be performed on translated text.
+</Note>
+
+### Batch size
+
+The `--batch_size` flag is accepted for API compatibility but has no effect on MLX inference — the pipeline processes VAD segments sequentially regardless of this value.
+
+### Chunk size
+
+`chunk_size` sets the maximum length (in seconds) of each VAD segment before it is split. The default is `30` seconds:
+
+```bash
+whispermlx audio.mp3 --model large-v3 --chunk_size 20
+```
+
+### Initial prompt
+
+Provide a text prompt to bias the first transcription window. Useful for guiding punctuation style or domain vocabulary:
+
+<CodeGroup>
+
+```bash CLI
+whispermlx audio.mp3 --model large-v3 --initial_prompt "Medical consultation transcript."
+```
+
+```python Python
+model = whispermlx.load_model(
+    "large-v3",
+    device="cpu",
+    asr_options={"initial_prompt": "Medical consultation transcript."},
+)
+```
+
+</CodeGroup>
+
+### Hotwords
+
+Hint phrases for rare or technical terms that the model might otherwise mishear:
+
+```bash
+whispermlx audio.mp3 --model large-v3 --hotwords "WhisperMLX, pyannote, MLX"
+```
+
+## Progress tracking
+
+Pass a `progress_callback` to `.transcribe()` to receive progress updates as a percentage:
+
+```python
+import whispermlx
+
+def my_callback(pct: float):
+    print(f"Progress: {pct:.1f}%")
+
+model = whispermlx.load_model("large-v3", device="cpu")
+result = model.transcribe("audio.mp3", progress_callback=my_callback)
+```
+
+The callback receives a `float` between `0` and `100` after each VAD segment is processed.
+
+## TranscriptionResult structure
+
+`model.transcribe()` returns a `TranscriptionResult` TypedDict:
+
+```python
+class TranscriptionResult(TypedDict):
+    segments: list[SingleSegment]
+    language: str
+```
+
+Each `SingleSegment` contains:
+
+```python
+class SingleSegment(TypedDict):
+    start: float          # Segment start time in seconds
+    end: float            # Segment end time in seconds
+    text: str             # Transcribed text
+    avg_logprob: float    # Average log probability (confidence indicator)
+```
+
+After running alignment, segments are upgraded to `SingleAlignedSegment` which adds a `words` list. See the [alignment guide](/guides/alignment) for details.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Word-level alignment" icon="clock" href="/guides/alignment">
+    Add precise word timestamps to your transcript.
+  </Card>
+  <Card title="Speaker diarization" icon="users" href="/guides/diarization">
+    Label each segment with the speaker who said it.
+  </Card>
+  <Card title="Output formats" icon="file-export" href="/guides/output-formats">
+    Export to SRT, VTT, JSON, and more.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/options">
+    Browse every available CLI flag.
+  </Card>
+</CardGroup>

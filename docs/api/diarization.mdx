@@ -1,0 +1,238 @@
+---
+title: "Diarization"
+description: "Identify speakers in audio and assign speaker labels to transcription segments."
+---
+
+Speaker diarization answers the question "who spoke when?" The `DiarizationPipeline` class uses pyannote to segment audio by speaker, and `assign_word_speakers` merges those speaker labels into a transcript.
+
+## DiarizationPipeline
+
+```python
+from whispermlx.diarize import DiarizationPipeline
+```
+
+Wraps a pyannote speaker diarization model. Instantiate once, then call the instance on audio files.
+
+### Constructor
+
+<ParamField path="model_name" type="string" default="pyannote/speaker-diarization-community-1">
+  Pyannote diarization model name on Hugging Face. Defaults to `"pyannote/speaker-diarization-community-1"`.
+</ParamField>
+
+<ParamField path="token" type="string">
+  Hugging Face access token. Required for gated models (including the default). Generate one at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) and accept the model's terms of use.
+</ParamField>
+
+<ParamField path="device" type="string | torch.device" default="mps">
+  Device for diarization inference. Use `"cpu"` or `"mps"`. Defaults to `"mps"` for Apple Silicon.
+</ParamField>
+
+<ParamField path="cache_dir" type="string">
+  Directory to cache downloaded model files. Defaults to the Hugging Face cache directory.
+</ParamField>
+
+### Calling the pipeline
+
+```python
+diarize_df = pipeline(audio, ...)
+```
+
+<ParamField path="audio" type="str | np.ndarray" required>
+  Audio input. Either a file path string or a 16 kHz mono float32 numpy array.
+</ParamField>
+
+<ParamField path="num_speakers" type="integer">
+  Exact number of speakers, if known. When provided, the model skips speaker count estimation.
+</ParamField>
+
+<ParamField path="min_speakers" type="integer">
+  Minimum number of speakers to detect. Used when the exact count is unknown.
+</ParamField>
+
+<ParamField path="max_speakers" type="integer">
+  Maximum number of speakers to detect. Used when the exact count is unknown.
+</ParamField>
+
+<ParamField path="return_embeddings" type="boolean" default="false">
+  When `True`, the pipeline returns a tuple `(diarize_df, speaker_embeddings)` instead of just `diarize_df`. The embeddings dict maps speaker IDs to float lists.
+</ParamField>
+
+<ParamField path="progress_callback" type="callable">
+  Called with a float between `0.0` and `100.0` as diarization progresses. Progress is split across two internal stages: segmentation (0–50%) and embeddings (50–99%). See [`ProgressCallback`](/api/schema#progresscallback).
+</ParamField>
+
+### Returns
+
+**When `return_embeddings=False`** (default): a pandas `DataFrame` with columns:
+
+| Column | Type | Description |
+|---|---|---|
+| `segment` | `Segment` | pyannote segment object |
+| `label` | `string` | Internal label |
+| `speaker` | `string` | Speaker ID (e.g. `"SPEAKER_00"`) |
+| `start` | `float` | Segment start time in seconds |
+| `end` | `float` | Segment end time in seconds |
+
+**When `return_embeddings=True`**: a tuple `(DataFrame, dict[str, list[float]])`. The dict maps each speaker ID to its embedding vector.
+
+### Full signature
+
+```python
+class DiarizationPipeline:
+    def __init__(
+        self,
+        model_name=None,
+        token=None,
+        device: str | torch.device | None = "mps",
+        cache_dir=None,
+    ):
+
+    def __call__(
+        self,
+        audio: str | np.ndarray,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
+        return_embeddings: bool = False,
+        progress_callback: ProgressCallback = None,
+    ) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, list[float]] | None]:
+```
+
+---
+
+## assign_word_speakers
+
+```python
+whispermlx.assign_word_speakers(diarize_df, transcript_result, ...)
+```
+
+Merges speaker labels from the diarization DataFrame into a transcript result. Uses an interval tree for O(log n) speaker lookup — significantly faster than a linear scan for long recordings.
+
+Each segment and word in the transcript gains a `"speaker"` field (e.g. `"SPEAKER_00"`).
+
+### Parameters
+
+<ParamField path="diarize_df" type="pd.DataFrame" required>
+  Diarization DataFrame returned by `DiarizationPipeline`.
+</ParamField>
+
+<ParamField path="transcript_result" type="AlignedTranscriptionResult | TranscriptionResult" required>
+  The transcript to augment. Typically the result of `align()`, but a plain `TranscriptionResult` from `transcribe()` is also accepted (speaker labels will be added to segments only, not words).
+</ParamField>
+
+<ParamField path="speaker_embeddings" type="dict[str, list[float]]">
+  Optional speaker embeddings dict from `DiarizationPipeline` (when `return_embeddings=True`). When provided, the embeddings are stored on the result under the key `"speaker_embeddings"`.
+</ParamField>
+
+<ParamField path="fill_nearest" type="boolean" default="false">
+  When `True`, assign the nearest speaker even when there is no direct time overlap between a word/segment and any diarization segment. Useful for audio with brief pauses between speaker segments.
+</ParamField>
+
+### Returns
+
+The `transcript_result` dict augmented in-place and returned. Each segment dict gains a `"speaker"` key, and each word dict (in aligned transcripts) also gains a `"speaker"` key.
+
+### Full signature
+
+```python
+def assign_word_speakers(
+    diarize_df: pd.DataFrame,
+    transcript_result: AlignedTranscriptionResult | TranscriptionResult,
+    speaker_embeddings: dict[str, list[float]] | None = None,
+    fill_nearest: bool = False,
+) -> AlignedTranscriptionResult | TranscriptionResult:
+```
+
+---
+
+## Usage
+
+```python
+import whispermlx
+from whispermlx.diarize import DiarizationPipeline
+
+# Step 1: Transcribe
+model = whispermlx.load_model("large-v3", device="cpu")
+result = model.transcribe("audio.mp3")
+
+# Step 2: Align (recommended before diarization)
+model_a, metadata = whispermlx.load_align_model(
+    language_code=result["language"],
+    device="cpu",
+)
+aligned = whispermlx.align(
+    result["segments"],
+    model_a,
+    metadata,
+    "audio.mp3",
+    device="cpu",
+)
+
+# Step 3: Diarize
+diarize_model = DiarizationPipeline(
+    token="hf_YOUR_TOKEN_HERE",
+    device="mps",
+)
+diarize_df = diarize_model("audio.mp3")
+
+# Step 4: Assign speakers
+final = whispermlx.assign_word_speakers(diarize_df, aligned)
+
+# Access results
+for seg in final["segments"]:
+    speaker = seg.get("speaker", "UNKNOWN")
+    print(f"[{speaker}] {seg['text']}")
+
+    for word in seg.get("words", []):
+        word_speaker = word.get("speaker", "UNKNOWN")
+        print(f"  [{word_speaker}] {word['word']}: {word['start']:.3f}s - {word['end']:.3f}s")
+```
+
+<CodeGroup>
+
+```python With speaker count hint
+# When you know the number of speakers, pass num_speakers for accuracy
+diarize_df = diarize_model("audio.mp3", num_speakers=2)
+```
+
+```python With speaker embeddings
+diarize_df, embeddings = diarize_model(
+    "audio.mp3",
+    return_embeddings=True,
+)
+final = whispermlx.assign_word_speakers(
+    diarize_df,
+    aligned,
+    speaker_embeddings=embeddings,
+)
+# final["speaker_embeddings"] now contains the embedding dict
+```
+
+```python Fill nearest speaker
+# Assign a speaker even for words with no direct overlap
+final = whispermlx.assign_word_speakers(
+    diarize_df,
+    aligned,
+    fill_nearest=True,
+)
+```
+
+</CodeGroup>
+
+<Warning>
+  The default pyannote diarization model (`pyannote/speaker-diarization-community-1`) is gated. You must accept its terms on Hugging Face and pass a valid `token` to `DiarizationPipeline`. Without a token, model loading will fail.
+</Warning>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Alignment" icon="clock" href="/api/alignment">
+    Align transcription to word-level timestamps before diarization.
+  </Card>
+  <Card title="Schema & Types" icon="code" href="/api/schema">
+    Full TypedDict definitions for AlignedTranscriptionResult.
+  </Card>
+  <Card title="Diarization guide" icon="book" href="/guides/diarization">
+    End-to-end walkthrough of the full pipeline.
+  </Card>
+</CardGroup>

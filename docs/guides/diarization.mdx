@@ -1,0 +1,174 @@
+---
+title: "Speaker Diarization"
+description: "Identify which speaker said what using pyannote-audio speaker diarization."
+---
+
+Speaker diarization answers the question "who spoke when?" It assigns a speaker label to each segment and word in a transcript. whisper(ml)x uses [pyannote-audio](https://github.com/pyannote/pyannote-audio)'s `speaker-diarization-community-1` model to perform this step.
+
+## Prerequisites
+
+The diarization model is gated on Hugging Face. Before using it, complete these steps:
+
+<Steps>
+  <Step title="Create a Hugging Face account and generate an access token">
+    Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) and create a token with at least **read** access.
+  </Step>
+  <Step title="Accept the model agreement">
+    Visit the [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) model page on Hugging Face and accept the usage agreement. You must be signed in.
+  </Step>
+  <Step title="Pass the token to whisper(ml)x">
+    Provide your token via `--hf_token` on the CLI or the `token` parameter on `DiarizationPipeline`.
+  </Step>
+</Steps>
+
+## CLI usage
+
+Enable diarization with the `--diarize` flag and supply your token:
+
+```bash
+whispermlx audio.mp3 --model large-v3 --diarize --hf_token YOUR_TOKEN
+```
+
+Provide speaker count hints if you know how many speakers are present:
+
+```bash
+whispermlx audio.mp3 --model large-v3 --diarize --hf_token YOUR_TOKEN --min_speakers 2 --max_speakers 4
+```
+
+## Python API
+
+The full three-stage pipeline — transcribe, align, diarize — gives the best results. Alignment is recommended before diarization because word-level timestamps allow speaker assignment at word granularity.
+
+```python
+import whispermlx
+from whispermlx.diarize import DiarizationPipeline, assign_word_speakers
+
+# Step 1: Transcribe
+model = whispermlx.load_model("large-v3", device="cpu")
+result = model.transcribe("audio.mp3")
+
+# Step 2: Align (recommended before diarization)
+model_a, metadata = whispermlx.load_align_model(
+    language_code=result["language"],
+    device="cpu",
+)
+result = whispermlx.align(
+    result["segments"], model_a, metadata, "audio.mp3", device="cpu"
+)
+
+# Step 3: Diarize
+diarize_model = DiarizationPipeline(token="YOUR_HF_TOKEN", device="cpu")
+diarize_segments = diarize_model("audio.mp3")
+
+# Step 4: Assign speakers to segments and words
+result = assign_word_speakers(diarize_segments, result)
+
+# Access results
+for segment in result["segments"]:
+    speaker = segment.get("speaker", "UNKNOWN")
+    print(f"[{speaker}] {segment['text']}")
+```
+
+## Speaker count hints
+
+If you know the number of speakers in advance, pass `min_speakers` and/or `max_speakers` to improve accuracy:
+
+```python
+diarize_segments = diarize_model(
+    "audio.mp3",
+    min_speakers=2,
+    max_speakers=4,
+)
+```
+
+Pass `num_speakers` if you know the exact count:
+
+```python
+diarize_segments = diarize_model("audio.mp3", num_speakers=3)
+```
+
+## Speaker embeddings
+
+Request speaker embedding vectors alongside the diarization result using `return_embeddings=True`. The embeddings dictionary maps each speaker ID to a list of floats representing that speaker's voice profile:
+
+```python
+diarize_df, embeddings = diarize_model("audio.mp3", return_embeddings=True)
+
+result = assign_word_speakers(diarize_df, result, speaker_embeddings=embeddings)
+
+# Embeddings are stored on the result dict
+print(result.get("speaker_embeddings"))
+# {"SPEAKER_00": [0.12, -0.34, ...], "SPEAKER_01": [...], ...}
+```
+
+To include embeddings in the JSON output file via the CLI, add `--speaker_embeddings`:
+
+```bash
+whispermlx audio.mp3 --model large-v3 --diarize --hf_token YOUR_TOKEN --speaker_embeddings
+```
+
+## Progress tracking
+
+Pass a `progress_callback` to `DiarizationPipeline.__call__()` to receive progress updates. The callback maps two internal pyannote steps — segmentation and embedding — into a monotonic 0–100 range:
+
+```python
+def on_progress(pct: float):
+    print(f"Diarization: {pct:.0f}%")
+
+diarize_segments = diarize_model("audio.mp3", progress_callback=on_progress)
+```
+
+## How speaker assignment works
+
+`assign_word_speakers` maps each diarization segment (a time interval with a speaker label) onto transcription segments and individual words.
+
+For every segment or word, it queries which diarization intervals overlap and picks the speaker with the greatest total overlap duration. If a segment has no overlapping diarization interval and `fill_nearest=True` is set, it falls back to the nearest segment by midpoint.
+
+<Note>
+  Internally, `assign_word_speakers` uses a custom `IntervalTree` backed by a sorted array and binary search. This gives O(log n) query time per word, which is approximately 228× faster than a linear scan — a meaningful improvement for long recordings such as multi-hour podcasts or meetings.
+</Note>
+
+## DiarizationPipeline API
+
+```python
+class DiarizationPipeline:
+    def __init__(
+        self,
+        model_name=None,          # Defaults to "pyannote/speaker-diarization-community-1"
+        token=None,               # Hugging Face access token
+        device="mps",             # torch device string or torch.device
+        cache_dir=None,           # Optional local cache directory
+    ): ...
+
+    def __call__(
+        self,
+        audio,                    # File path or numpy array
+        num_speakers=None,        # Exact speaker count (optional)
+        min_speakers=None,        # Minimum speakers (optional)
+        max_speakers=None,        # Maximum speakers (optional)
+        return_embeddings=False,  # Return speaker embedding vectors
+        progress_callback=None,   # Callable[[float], None]
+    ): ...
+```
+
+## assign_word_speakers API
+
+```python
+def assign_word_speakers(
+    diarize_df,            # DataFrame from DiarizationPipeline
+    transcript_result,     # TranscriptionResult or AlignedTranscriptionResult
+    speaker_embeddings=None,  # Optional dict from return_embeddings=True
+    fill_nearest=False,    # Assign nearest speaker when no overlap exists
+) -> AlignedTranscriptionResult | TranscriptionResult: ...
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Output formats" icon="file-export" href="/guides/output-formats">
+    Write speaker-labeled transcripts to SRT, JSON, and other formats.
+  </Card>
+  <Card title="Alignment guide" icon="clock" href="/guides/alignment">
+    Learn about word-level alignment, which enables per-word speaker labels.
+  </Card>
+</CardGroup>

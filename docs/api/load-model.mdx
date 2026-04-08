@@ -1,0 +1,161 @@
+---
+title: "load_model"
+description: "Load a Whisper model for inference using the MLX backend."
+---
+
+```python
+whispermlx.load_model(whisper_arch, device, ...)
+```
+
+Loads a Whisper model and returns an `MLXWhisperPipeline` ready for transcription. The pipeline bundles a VAD model that segments audio before each chunk is passed to MLX Whisper on Apple Silicon.
+
+## Parameters
+
+<ParamField path="whisper_arch" type="string" required>
+  Short model name (e.g. `"large-v3"`, `"small"`) or a full Hugging Face repo ID (e.g. `"mlx-community/whisper-large-v3-mlx"`). Short names are resolved via a built-in map:
+
+  | Short name | Hugging Face repo |
+  |---|---|
+  | `tiny` | `mlx-community/whisper-tiny-mlx` |
+  | `base` | `mlx-community/whisper-base-mlx` |
+  | `small` | `mlx-community/whisper-small-mlx` |
+  | `medium` | `mlx-community/whisper-medium-mlx` |
+  | `large` | `mlx-community/whisper-large-mlx` |
+  | `large-v2` | `mlx-community/whisper-large-v2-mlx` |
+  | `large-v3` | `mlx-community/whisper-large-v3-mlx` |
+  | `large-v3-turbo` / `turbo` | `mlx-community/whisper-large-v3-turbo` |
+
+  English-only variants (`tiny.en`, `base.en`, `small.en`, `medium.en`) are also available. Pass a full Hugging Face repo ID for any other MLX-compatible model.
+</ParamField>
+
+<ParamField path="device" type="string" required>
+  Device for the VAD model. Use `"cpu"` or `"mps"`. MLX Whisper inference always runs on Apple Silicon GPU automatically — this parameter does not affect it.
+</ParamField>
+
+<ParamField path="device_index" type="integer" default="0">
+  Kept for API compatibility. Unused by MLX inference.
+</ParamField>
+
+<ParamField path="compute_type" type="string" default="default">
+  Kept for API compatibility. Ignored by MLX inference.
+</ParamField>
+
+<ParamField path="asr_options" type="object">
+  Dict of ASR options. Only the `"initial_prompt"` key is used — all other keys are ignored.
+
+  ```python
+  asr_options={"initial_prompt": "Medical consultation transcript."}
+  ```
+</ParamField>
+
+<ParamField path="language" type="string">
+  BCP-47 language code (e.g. `"en"`, `"fr"`, `"ja"`), or `None` to enable automatic language detection from the first audio chunk.
+</ParamField>
+
+<ParamField path="vad_model" type="Vad">
+  A pre-instantiated VAD model. When provided, `vad_method` is ignored. Use this to share a single VAD instance across multiple calls.
+</ParamField>
+
+<ParamField path="vad_method" type="string" default="pyannote">
+  VAD backend to use when `vad_model` is not provided. Accepted values: `"pyannote"` (default) or `"silero"`.
+</ParamField>
+
+<ParamField path="vad_options" type="object">
+  Overrides for VAD configuration. Keys and defaults:
+
+  | Key | Default | Description |
+  |---|---|---|
+  | `chunk_size` | `30` | Maximum speech chunk length in seconds |
+  | `vad_onset` | `0.500` | Onset threshold for speech detection |
+  | `vad_offset` | `0.363` | Offset threshold for speech detection |
+</ParamField>
+
+<ParamField path="task" type="string" default="transcribe">
+  Default task for the pipeline. `"transcribe"` produces output in the source language; `"translate"` produces an English translation. Can be overridden per-call on `.transcribe()`.
+</ParamField>
+
+<ParamField path="local_files_only" type="boolean" default="false">
+  When `True`, use only locally cached model files and do not attempt to download from Hugging Face. Raises an error if the model is not cached.
+</ParamField>
+
+<ParamField path="threads" type="integer" default="4">
+  Kept for API compatibility. Ignored by MLX inference.
+</ParamField>
+
+## Returns
+
+An `MLXWhisperPipeline` instance. Call `.transcribe()` on it to transcribe audio.
+
+## Full signature
+
+```python
+def load_model(
+    whisper_arch: str,
+    device: str,
+    device_index: int = 0,
+    compute_type: str = "default",
+    asr_options: dict | None = None,
+    language: str | None = None,
+    vad_model: Vad | None = None,
+    vad_method: str | None = "pyannote",
+    vad_options: dict | None = None,
+    model=None,
+    task: str = "transcribe",
+    download_root: str | None = None,
+    local_files_only: bool = False,
+    threads: int = 4,
+    use_auth_token=None,
+) -> MLXWhisperPipeline:
+```
+
+## Usage
+
+<CodeGroup>
+
+```python Basic
+import whispermlx
+
+model = whispermlx.load_model("large-v3", device="cpu")
+result = model.transcribe("audio.mp3")
+```
+
+```python Custom VAD options
+model = whispermlx.load_model(
+    "large-v3",
+    device="cpu",
+    vad_method="silero",
+    vad_options={"vad_onset": 0.4, "vad_offset": 0.3},
+)
+```
+
+```python Full HF repo ID
+model = whispermlx.load_model(
+    "mlx-community/whisper-large-v3-turbo",
+    device="cpu",
+)
+```
+
+```python Offline mode
+model = whispermlx.load_model(
+    "large-v3",
+    device="cpu",
+    local_files_only=True,
+)
+```
+
+</CodeGroup>
+
+<Note>
+  The `device` parameter only controls where the VAD model (pyannote or silero) runs. MLX Whisper inference executes on the Apple Silicon GPU automatically regardless of this setting.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MLXWhisperPipeline.transcribe" icon="microphone" href="/api/transcribe">
+    Transcribe audio with the loaded model.
+  </Card>
+  <Card title="Voice Activity Detection" icon="waveform" href="/concepts/vad">
+    Learn about the VAD stage and available backends.
+  </Card>
+</CardGroup>

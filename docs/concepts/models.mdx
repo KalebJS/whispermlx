@@ -1,0 +1,132 @@
+---
+title: "Models"
+description: "Whisper model names, HuggingFace repo mappings, alignment models, and the diarization model."
+---
+
+## Whisper models
+
+whisper(ml)x uses [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) for transcription. All inference runs on Apple Silicon's GPU via the MLX framework.
+
+### Short name resolution
+
+You can identify a model by its short name (e.g., `"large-v3"`) or by a full HuggingFace repo ID. The `_resolve_mlx_model()` function in `asr.py` handles the mapping: if the string contains a `/`, it is used as-is; otherwise it is looked up in `MLX_MODEL_MAP`.
+
+```python
+# Short name — resolved automatically
+model = whispermlx.load_model("large-v3", device="cpu")
+
+# Full HuggingFace repo ID — used directly
+model = whispermlx.load_model("mlx-community/whisper-large-v3-mlx", device="cpu")
+```
+
+<Note>
+  If you pass an unknown short name that is not in `MLX_MODEL_MAP` and does not contain a `/`, whisper(ml)x logs a warning and passes the string through unchanged. The model load will then fail if no matching repo exists on HuggingFace.
+</Note>
+
+### Model map
+
+| Short name | HuggingFace repo |
+|---|---|
+| `tiny` | `mlx-community/whisper-tiny-mlx` |
+| `tiny.en` | `mlx-community/whisper-tiny.en-mlx` |
+| `base` | `mlx-community/whisper-base-mlx` |
+| `base.en` | `mlx-community/whisper-base.en-mlx` |
+| `small` | `mlx-community/whisper-small-mlx` |
+| `small.en` | `mlx-community/whisper-small.en-mlx` |
+| `medium` | `mlx-community/whisper-medium-mlx` |
+| `medium.en` | `mlx-community/whisper-medium.en-mlx` |
+| `large` | `mlx-community/whisper-large-mlx` |
+| `large-v1` | `mlx-community/whisper-large-mlx` |
+| `large-v2` | `mlx-community/whisper-large-v2-mlx` |
+| `large-v3` | `mlx-community/whisper-large-v3-mlx` |
+| `large-v3-turbo` | `mlx-community/whisper-large-v3-turbo` |
+| `turbo` | `mlx-community/whisper-large-v3-turbo` |
+
+<Note>
+  `large` and `large-v1` resolve to the same repo. `large-v3-turbo` and `turbo` are also identical — `turbo` is a convenient alias.
+</Note>
+
+### Choosing a model
+
+<CardGroup cols={2}>
+  <Card title="tiny / base" icon="bolt">
+    Fastest inference, lowest memory use. Best for quick experiments or real-time-adjacent use cases where accuracy is less critical.
+  </Card>
+  <Card title="small / medium" icon="gauge">
+    Good balance of speed and accuracy. Suitable for most production use cases where latency matters.
+  </Card>
+  <Card title="large-v3" icon="bullseye">
+    Highest accuracy across languages. Use when quality is the priority and inference time is acceptable.
+  </Card>
+  <Card title="turbo (large-v3-turbo)" icon="rocket">
+    A distilled version of large-v3 that is significantly faster with only a minor accuracy tradeoff. A strong default choice for most use cases.
+  </Card>
+</CardGroup>
+
+English-only variants (`tiny.en`, `base.en`, `small.en`, `medium.en`) are optimized for English and offer slightly better accuracy on English audio. Passing a non-English language to an `.en` model falls back to English automatically with a warning.
+
+### Model caching
+
+Models are downloaded from HuggingFace on first use and cached in the standard HuggingFace cache directory (`~/.cache/huggingface/hub` by default). Subsequent runs load from cache and do not require network access.
+
+To force offline loading from cache, pass `--model_cache_only` on the CLI or `local_files_only=True` to `load_model()`.
+
+---
+
+## Alignment models
+
+The alignment stage uses wav2vec2 models to produce word-level timestamps. Models are selected per language automatically from two sources:
+
+- **torchaudio pipelines** — used for `en`, `fr`, `de`, `es`, `it`
+- **HuggingFace models** — used for all other supported languages
+
+### Torch audio pipeline models
+
+| Language | Model |
+|---|---|
+| `en` | `WAV2VEC2_ASR_BASE_960H` |
+| `fr` | `VOXPOPULI_ASR_BASE_10K_FR` |
+| `de` | `VOXPOPULI_ASR_BASE_10K_DE` |
+| `es` | `VOXPOPULI_ASR_BASE_10K_ES` |
+| `it` | `VOXPOPULI_ASR_BASE_10K_IT` |
+
+### HuggingFace alignment models (selection)
+
+| Language | Model |
+|---|---|
+| `ja` | `jonatasgrosman/wav2vec2-large-xlsr-53-japanese` |
+| `zh` | `jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn` |
+| `nl` | `jonatasgrosman/wav2vec2-large-xlsr-53-dutch` |
+| `pt` | `jonatasgrosman/wav2vec2-large-xlsr-53-portuguese` |
+| `ar` | `jonatasgrosman/wav2vec2-large-xlsr-53-arabic` |
+| `ru` | `jonatasgrosman/wav2vec2-large-xlsr-53-russian` |
+| `pl` | `jonatasgrosman/wav2vec2-large-xlsr-53-polish` |
+| `hi` | `theainerd/Wav2Vec2-large-xlsr-hindi` |
+| `ko` | `kresnik/wav2vec2-large-xlsr-korean` |
+| `vi` | `nguyenvulebinh/wav2vec2-base-vi-vlsp2020` |
+| `tr` | `mpoyraz/wav2vec2-xls-r-300m-cv7-turkish` |
+| `uk` | `Yehor/wav2vec2-xls-r-300m-uk-with-small-lm` |
+| `sv` | `KBLab/wav2vec2-large-voxrex-swedish` |
+| `id` | `cahya/wav2vec2-large-xlsr-indonesian` |
+
+30+ languages are supported in total. For the full list, see `alignment.py`.
+
+To use a custom alignment model, pass `--align_model <HF_REPO_ID>` on the CLI or the `model_name` argument to `load_align_model()`.
+
+<Warning>
+  If no default alignment model exists for your language, `load_align_model()` raises a `ValueError`. You must supply a custom wav2vec2 model via `--align_model` or skip alignment with `--no_align`.
+</Warning>
+
+---
+
+## Diarization model
+
+The diarization pipeline uses pyannote. The default model is:
+
+```
+pyannote/speaker-diarization-community-1
+```
+
+To use a different model, pass `--diarize_model <MODEL_NAME>` on the CLI or set `model_name` when constructing `DiarizationPipeline` directly.
+
+Diarization models are also cached in the HuggingFace cache directory. Some models require accepting terms of use on HuggingFace and providing an access token via `--hf_token`.

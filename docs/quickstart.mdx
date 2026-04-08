@@ -1,0 +1,139 @@
+---
+title: "Quick start"
+description: "Transcribe your first audio file with whisper(ml)x in under five minutes."
+---
+
+<Note>
+  whisper(ml)x requires an Apple Silicon Mac (M1, M2, M3, or M4). MLX inference runs on the Apple Silicon GPU automatically — no configuration needed.
+</Note>
+
+<Steps>
+  <Step title="Install whisper(ml)x">
+    Install the package using pip or uv:
+
+    <CodeGroup>
+
+    ```bash pip
+    pip install whispermlx
+    ```
+
+    ```bash uv
+    uv add whispermlx
+    ```
+
+    </CodeGroup>
+
+    <Tip>
+      Use `uv` for faster installs and automatic virtual environment management.
+    </Tip>
+  </Step>
+
+  <Step title="Run your first transcription">
+    Transcribe an audio file from the command line. The model downloads automatically from Hugging Face on first run.
+
+    ```bash
+    whispermlx audio.mp3 --model large-v3
+    ```
+
+    This produces transcript files in your current directory in all supported formats (SRT, VTT, TXT, TSV, JSON).
+
+    <Tip>
+      Use `--model large-v3` for the best accuracy. It maps to `mlx-community/whisper-large-v3-mlx` automatically.
+    </Tip>
+  </Step>
+
+  <Step title="Transcribe with the Python API">
+    Load a model and transcribe an audio file programmatically:
+
+    ```python
+    import whispermlx
+
+    model = whispermlx.load_model("large-v3", device="cpu")
+    result = model.transcribe("audio.mp3")
+    print(result["segments"])
+    ```
+
+    `result` is a `TranscriptionResult` with the following structure:
+
+    ```python
+    {
+        "segments": [
+            {
+                "start": 0.0,      # segment start time in seconds
+                "end": 4.2,        # segment end time in seconds
+                "text": "Hello, world.",
+                "avg_logprob": -0.23,
+            },
+            # ...
+        ],
+        "language": "en",
+    }
+    ```
+  </Step>
+
+  <Step title="Add alignment for word-level timestamps">
+    Run forced alignment to get precise start and end times for every word:
+
+    ```python
+    import whispermlx
+
+    model = whispermlx.load_model("large-v3", device="cpu")
+    result = model.transcribe("audio.mp3")
+
+    model_a, metadata = whispermlx.load_align_model(
+        language_code=result["language"],
+        device="cpu",
+    )
+    result = whispermlx.align(
+        result["segments"],
+        model_a,
+        metadata,
+        "audio.mp3",
+        device="cpu",
+    )
+    print(result["word_segments"])
+    ```
+
+    The aligned result is an `AlignedTranscriptionResult`:
+
+    ```python
+    {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 4.2,
+                "text": "Hello, world.",
+                "words": [
+                    {"word": "Hello,", "start": 0.0, "end": 0.6, "score": 0.98},
+                    {"word": "world.", "start": 0.8, "end": 1.2, "score": 0.99},
+                ],
+                "chars": None,
+            },
+            # ...
+        ],
+        "word_segments": [
+            {"word": "Hello,", "start": 0.0, "end": 0.6, "score": 0.98},
+            {"word": "world.", "start": 0.8, "end": 1.2, "score": 0.99},
+            # ...
+        ],
+    }
+    ```
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="box" href="/installation">
+    Set up speaker diarization and learn about model caching.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/overview">
+    See all available flags for the `whispermlx` command.
+  </Card>
+  <Card title="Diarization guide" icon="users" href="/guides/diarization">
+    Assign speaker labels to segments and words.
+  </Card>
+  <Card title="Python API" icon="code" href="/api/load-model">
+    Full reference for `load_model`, `align`, and `DiarizationPipeline`.
+  </Card>
+</CardGroup>

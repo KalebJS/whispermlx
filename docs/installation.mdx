@@ -1,0 +1,103 @@
+---
+title: "Installation"
+description: "Install whisper(ml)x on Apple Silicon and configure optional features like speaker diarization."
+---
+
+## Requirements
+
+- **Apple Silicon Mac** — M1, M2, M3, or M4 chip
+- **macOS** — any version supported by your chip
+- **Python** — 3.10, 3.11, 3.12, or 3.13
+
+<Warning>
+  whisper(ml)x requires Apple Silicon. MLX inference does not run on Intel Macs or other platforms.
+</Warning>
+
+## Install whisper(ml)x
+
+<CodeGroup>
+
+```bash pip
+pip install whispermlx
+```
+
+```bash uv
+uv add whispermlx
+```
+
+</CodeGroup>
+
+This installs all required dependencies, including:
+
+- `mlx-whisper` — ASR inference on Apple Silicon
+- `torch` and `torchaudio` — CPU wheels, used by VAD and alignment models
+- `transformers` — wav2vec2 alignment models
+- `pyannote-audio` — VAD and speaker diarization
+
+<Note>
+  `torch` and `torchaudio` are installed as CPU wheels from the PyTorch CPU index. They are used for VAD and alignment — not for Whisper inference, which runs via MLX.
+</Note>
+
+## Model downloads
+
+Models are downloaded from Hugging Face on first use and cached at `~/.cache/whisper` by default. You do not need to download anything manually.
+
+Short model names are automatically resolved to their `mlx-community` equivalents:
+
+| Short name | Hugging Face repo |
+|---|---|
+| `tiny`, `base`, `small`, `medium` | `mlx-community/whisper-{name}-mlx` |
+| `large-v3` | `mlx-community/whisper-large-v3-mlx` |
+| `large-v3-turbo` / `turbo` | `mlx-community/whisper-large-v3-turbo` |
+
+You can also pass a full Hugging Face repo ID directly:
+
+```bash
+whispermlx audio.mp3 --model mlx-community/whisper-large-v3-turbo
+```
+
+To use a custom cache directory, pass `--model_dir` on the CLI or set `download_root` in `load_model()`.
+
+## Speaker diarization setup
+
+Speaker diarization requires a Hugging Face access token and acceptance of the pyannote model agreement.
+
+<Steps>
+  <Step title="Create a Hugging Face access token">
+    Go to [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) and create a token with **read** access.
+  </Step>
+  <Step title="Accept the model agreement">
+    Visit the [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) model page and accept the user agreement while logged in to your Hugging Face account.
+  </Step>
+  <Step title="Pass the token to whisper(ml)x">
+    Provide your token via the CLI flag or the Python API:
+
+    <CodeGroup>
+
+    ```bash CLI
+    whispermlx audio.mp3 --model large-v3 --diarize --hf_token YOUR_TOKEN
+    ```
+
+    ```python Python
+    from whispermlx.diarize import DiarizationPipeline
+
+    diarize_model = DiarizationPipeline(token="YOUR_TOKEN", device="cpu")
+    diarize_segments = diarize_model("audio.mp3")
+    ```
+
+    </CodeGroup>
+  </Step>
+</Steps>
+
+<Warning>
+  Without a valid token and accepted model agreement, diarization will fail with an authentication error when downloading the pyannote model.
+</Warning>
+
+## Supported Python versions
+
+| Python version | Supported |
+|---|---|
+| 3.10 | Yes |
+| 3.11 | Yes |
+| 3.12 | Yes |
+| 3.13 | Yes |

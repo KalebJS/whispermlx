@@ -1,0 +1,231 @@
+---
+title: "Output Formats"
+description: "Export transcription results as SRT, VTT, TXT, TSV, JSON, AUD, or all formats at once."
+---
+
+whisper(ml)x can write transcription results to several file formats. The default (`all`) produces every format simultaneously. Use `--output_format` to select a specific one.
+
+## Available formats
+
+| Format | Extension | Description |
+|---|---|---|
+| `srt` | `.srt` | SubRip subtitle format with frame-accurate timestamps |
+| `vtt` | `.vtt` | WebVTT format for HTML5 video |
+| `txt` | `.txt` | Plain text transcript |
+| `tsv` | `.tsv` | Tab-separated values with start (ms), end (ms), and text columns |
+| `json` | `.json` | Full JSON with all segments, words, and speaker data |
+| `aud` | `.aud` | Audacity label file (seconds-based timestamps) |
+| `all` | all of the above | Produces all formats in a single run (default) |
+
+## CLI usage
+
+```bash
+# Produce all formats (default)
+whispermlx audio.mp3 --model large-v3 --output_format all --output_dir ./output
+
+# SRT subtitles only
+whispermlx audio.mp3 --model large-v3 --output_format srt
+
+# JSON with full segment data
+whispermlx audio.mp3 --model large-v3 --output_format json
+
+# Plain text transcript
+whispermlx audio.mp3 --model large-v3 --output_format txt
+```
+
+Output files are named after the input file. Transcribing `audio.mp3` produces `audio.srt`, `audio.json`, etc. in the output directory.
+
+## Format details
+
+### SRT
+
+Standard subtitle format supported by most video players and editing tools:
+
+```
+1
+00:00:01,240 --> 00:00:04,320
+Hello, this is the first subtitle cue.
+
+2
+00:00:04,800 --> 00:00:07,100
+And this is the second one.
+```
+
+When diarization is enabled, speaker labels are prepended to each cue:
+
+```
+1
+00:00:01,240 --> 00:00:04,320
+[SPEAKER_00]: Hello, this is the first subtitle cue.
+```
+
+### VTT
+
+WebVTT format for embedding in HTML5 video via the `<track>` element:
+
+```
+WEBVTT
+
+00:01.240 --> 00:04.320
+Hello, this is the first subtitle cue.
+```
+
+### TXT
+
+Plain text, one segment per line. Speaker labels are included when diarization data is present:
+
+```
+Hello, this is the first segment.
+And this is the second one.
+```
+
+With diarization:
+
+```
+[SPEAKER_00]: Hello, this is the first segment.
+[SPEAKER_01]: And this is the second one.
+```
+
+### TSV
+
+Tab-separated values with a header row. Timestamps are in integer milliseconds:
+
+```
+start	end	text
+1240	4320	Hello, this is the first segment.
+4800	7100	And this is the second one.
+```
+
+### JSON
+
+Full output including all segment data, word-level timestamps (when alignment ran), and speaker labels (when diarization ran):
+
+```json
+{
+  "segments": [
+    {
+      "start": 1.24,
+      "end": 4.32,
+      "text": " Hello, this is the first segment.",
+      "avg_logprob": -0.21,
+      "speaker": "SPEAKER_00",
+      "words": [
+        {"word": "Hello,", "start": 1.24, "end": 1.56, "score": 0.98, "speaker": "SPEAKER_00"},
+        {"word": "this", "start": 1.60, "end": 1.78, "score": 0.99, "speaker": "SPEAKER_00"}
+      ]
+    }
+  ],
+  "word_segments": [
+    {"word": "Hello,", "start": 1.24, "end": 1.56, "score": 0.98, "speaker": "SPEAKER_00"}
+  ],
+  "language": "en",
+  "speaker_embeddings": {
+    "SPEAKER_00": [0.12, -0.34, "..."]
+  }
+}
+```
+
+The `speaker_embeddings` key is only present when `--speaker_embeddings` was passed.
+
+### AUD
+
+Audacity label file format. Timestamps are in seconds (not milliseconds). The file can be imported into Audacity via **File → Import → Labels**:
+
+```
+1.240	4.320	Hello, this is the first segment.
+```
+
+With diarization, the speaker is embedded in double brackets:
+
+```
+1.240	4.320	[[SPEAKER_00]]Hello, this is the first segment.
+```
+
+<Note>
+  The `.aud` format is not included in `all`. It must be requested explicitly with `--output_format aud`.
+</Note>
+
+## Subtitle formatting options
+
+These options apply to SRT and VTT output and require alignment (they are incompatible with `--no_align`):
+
+| Option | Description |
+|---|---|
+| `--max_line_width N` | Maximum number of characters per subtitle line before wrapping |
+| `--max_line_count N` | Maximum number of lines per subtitle cue (requires `--max_line_width`) |
+| `--highlight_words` | Underline the currently spoken word in each SRT/VTT cue |
+| `--segment_resolution` | Split segments by `sentence` (default) or `chunk` |
+
+### Line wrapping example
+
+```bash
+whispermlx audio.mp3 --model large-v3 --output_format srt \
+  --max_line_width 42 --max_line_count 2
+```
+
+### Word highlighting
+
+`--highlight_words` uses HTML underline tags (`<u>word</u>`) to mark the active word in each cue:
+
+```bash
+whispermlx audio.mp3 --model large-v3 --output_format vtt --highlight_words True
+```
+
+<Warning>
+  `--max_line_width`, `--max_line_count`, and `--highlight_words` require word-level timestamps from alignment. Using them with `--no_align` will cause an error.
+</Warning>
+
+### Segment resolution
+
+`--segment_resolution` is accepted as a CLI flag (default: `sentence`) for compatibility, but does not currently affect subtitle output directly.
+
+## Output directory
+
+Use `--output_dir` (short: `-o`) to set where files are written. The default is the current working directory:
+
+```bash
+whispermlx audio.mp3 --model large-v3 --output_dir ./transcripts
+```
+
+## Writing output from Python
+
+Use `get_writer` to write results programmatically:
+
+```python
+from whispermlx.utils import get_writer
+
+writer = get_writer("srt", output_dir="./output")
+writer(result, "audio.mp3", {
+    "max_line_width": None,
+    "max_line_count": None,
+    "highlight_words": False,
+})
+```
+
+Pass `"all"` to write every format (excluding `aud`) in one call:
+
+```python
+writer = get_writer("all", output_dir="./output")
+writer(result, "audio.mp3", {
+    "max_line_width": None,
+    "max_line_count": None,
+    "highlight_words": False,
+})
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Transcription" icon="microphone" href="/guides/transcription">
+    Transcribe audio files to get a result to write.
+  </Card>
+  <Card title="Alignment" icon="clock" href="/guides/alignment">
+    Add word timestamps to unlock subtitle formatting options.
+  </Card>
+  <Card title="Diarization" icon="users" href="/guides/diarization">
+    Add speaker labels to SRT, VTT, TXT, and JSON output.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/options">
+    Full reference for all CLI flags.
+  </Card>
+</CardGroup>

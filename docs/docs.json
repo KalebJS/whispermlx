@@ -1,0 +1,79 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "whisper(ml)x",
+  "theme": "luma",
+  "colors": {
+    "primary": "#f8c61e",
+    "light": "#fbf9ec",
+    "dark": "#4e412f"
+  },
+  "favicon": "https://media.brand.dev/aef923c5-713a-4a4c-9df8-656dd3394c51.jpg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/kalebjs/whispermlx"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/kalebjs/whispermlx"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/pipeline",
+              "concepts/models",
+              "concepts/vad"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/transcription",
+              "guides/alignment",
+              "guides/diarization",
+              "guides/output-formats"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/overview",
+              "cli/options"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Python API",
+            "pages": [
+              "api/load-model",
+              "api/transcribe",
+              "api/alignment",
+              "api/diarization",
+              "api/audio",
+              "api/schema"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

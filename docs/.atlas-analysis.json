@@ -1,0 +1,88 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "whisper(ml)x",
+  "projectDescription": "A Python library and CLI for fast, accurate automatic speech recognition on Apple Silicon using MLX, with word-level timestamps and speaker diarization.",
+  "theme": "luma",
+  "primaryColor": "#f8c61e",
+  "lightColor": "#fbf9ec",
+  "darkColor": "#4e412f",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/pipeline",
+              "concepts/models",
+              "concepts/vad"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/transcription",
+              "guides/alignment",
+              "guides/diarization",
+              "guides/output-formats"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/overview",
+              "cli/options"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Python API",
+            "pages": [
+              "api/load-model",
+              "api/transcribe",
+              "api/alignment",
+              "api/diarization",
+              "api/audio",
+              "api/schema"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "MLX inference on Apple Silicon GPU via unified memory",
+    "Word-level timestamps via wav2vec2 forced alignment",
+    "Speaker diarization via pyannote-audio",
+    "Voice Activity Detection (VAD) with pyannote or silero backends",
+    "Support for 30+ languages",
+    "Simple short model names auto-mapped to mlx-community HF repos",
+    "Both CLI and Python API interfaces",
+    "Multiple output formats: SRT, VTT, TXT, TSV, JSON"
+  ],
+  "publicApiSurface": [
+    "whispermlx.load_model(whisper_arch, device, ...)",
+    "MLXWhisperPipeline.transcribe(audio, ...)",
+    "whispermlx.load_align_model(language_code, device, ...)",
+    "whispermlx.align(segments, model_a, metadata, audio, device)",
+    "whispermlx.diarize.DiarizationPipeline(model_name, token, device)",
+    "whispermlx.assign_word_speakers(diarize_df, transcript_result, ...)",
+    "whispermlx.load_audio(file)",
+    "whispermlx.setup_logging(level, log_file)",
+    "whispermlx.get_logger(name)",
+    "CLI: whispermlx audio.mp3 --model large-v3 [options]"
+  ]
+}

@@ -1,0 +1,211 @@
+---
+title: "Alignment"
+description: "Load a wav2vec2 alignment model and align transcription segments to word-level timestamps."
+---
+
+Forced alignment maps Whisper's segment-level transcriptions to precise word timestamps by running a wav2vec2 model against the original audio. The process requires two steps: loading a language-specific model with `load_align_model`, then running `align`.
+
+## load_align_model
+
+```python
+whispermlx.load_align_model(language_code, device, ...)
+```
+
+Loads a wav2vec2 alignment model for the given language. Returns a `(model, metadata)` tuple to pass directly to `align()`.
+
+### Parameters
+
+<ParamField path="language_code" type="string" required>
+  BCP-47 language code for the audio (e.g. `"en"`, `"fr"`, `"ja"`). A default wav2vec2 model is selected automatically for 30+ languages including English, French, German, Spanish, Italian, Japanese, Chinese, Arabic, Hindi, and more.
+</ParamField>
+
+<ParamField path="device" type="string" required>
+  PyTorch device for the alignment model. Use `"cpu"` or `"mps"`.
+</ParamField>
+
+<ParamField path="model_name" type="string">
+  Override the default alignment model for the language. Pass any wav2vec2 model name from [Hugging Face](https://huggingface.co/models) or a torchaudio pipeline name (e.g. `"WAV2VEC2_ASR_BASE_960H"`).
+</ParamField>
+
+<ParamField path="model_dir" type="string">
+  Directory to cache downloaded alignment model files. Defaults to the Hugging Face cache directory.
+</ParamField>
+
+<ParamField path="model_cache_only" type="boolean" default="false">
+  When `True`, load alignment models from local cache only — no network requests. Raises an error if the model is not already cached. Useful for offline environments.
+</ParamField>
+
+### Returns
+
+A tuple `(model, metadata)`:
+
+<ResponseField name="model" type="torch.nn.Module" required>
+  The loaded wav2vec2 model, moved to `device`. Pass this directly to `align()`.
+</ResponseField>
+
+<ResponseField name="metadata" type="dict" required>
+  Dictionary with keys `"language"`, `"dictionary"`, and `"type"`. Pass this directly to `align()`.
+</ResponseField>
+
+### Full signature
+
+```python
+def load_align_model(
+    language_code: str,
+    device: str,
+    model_name: str | None = None,
+    model_dir=None,
+    model_cache_only: bool = False,
+):
+```
+
+---
+
+## align
+
+```python
+whispermlx.align(transcript, model, align_model_metadata, audio, device, ...)
+```
+
+Aligns a list of transcription segments to word-level timestamps using forced alignment. Returns an `AlignedTranscriptionResult` with per-word start and end times.
+
+### Parameters
+
+<ParamField path="transcript" type="list[SingleSegment]" required>
+  The `segments` list from a `TranscriptionResult` (i.e. `result["segments"]`).
+</ParamField>
+
+<ParamField path="model" type="torch.nn.Module" required>
+  Alignment model returned by `load_align_model`.
+</ParamField>
+
+<ParamField path="align_model_metadata" type="dict" required>
+  Metadata dict returned by `load_align_model`.
+</ParamField>
+
+<ParamField path="audio" type="str | np.ndarray | torch.Tensor" required>
+  The same audio used for transcription. A file path string, a 16 kHz mono float32 numpy array, or a PyTorch tensor. File paths are loaded automatically via `load_audio`.
+</ParamField>
+
+<ParamField path="device" type="string" required>
+  PyTorch device for alignment inference (`"cpu"` or `"mps"`). Should match the device used in `load_align_model`.
+</ParamField>
+
+<ParamField path="return_char_alignments" type="boolean" default="false">
+  When `True`, each aligned segment includes a `chars` field with per-character timestamps in addition to word timestamps.
+</ParamField>
+
+<ParamField path="interpolate_method" type="string" default="nearest">
+  Method used to fill in timestamps for words that could not be directly aligned. `"nearest"` assigns the timestamp of the nearest aligned neighbor.
+</ParamField>
+
+<ParamField path="print_progress" type="boolean" default="false">
+  Print percentage progress to stdout as each segment is aligned.
+</ParamField>
+
+<ParamField path="progress_callback" type="callable">
+  Called with a float between `0.0` and `100.0` after each segment is processed. See [`ProgressCallback`](/api/schema#progresscallback).
+</ParamField>
+
+### Returns
+
+An [`AlignedTranscriptionResult`](/api/schema#alignedtranscriptionresult) TypedDict:
+
+<ResponseField name="segments" type="list[SingleAlignedSegment]" required>
+  Aligned segments. Each segment contains a `words` list with per-word timestamps.
+
+  <Expandable title="SingleAlignedSegment fields">
+    <ResponseField name="start" type="float" required>Start time in seconds.</ResponseField>
+    <ResponseField name="end" type="float" required>End time in seconds.</ResponseField>
+    <ResponseField name="text" type="string" required>Segment text.</ResponseField>
+    <ResponseField name="words" type="list[SingleWordSegment]" required>
+      Word-level alignments.
+
+      <Expandable title="SingleWordSegment fields">
+        <ResponseField name="word" type="string" required>The word text.</ResponseField>
+        <ResponseField name="start" type="float">Word start time in seconds.</ResponseField>
+        <ResponseField name="end" type="float">Word end time in seconds.</ResponseField>
+        <ResponseField name="score" type="float">Alignment confidence score (0–1).</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="chars" type="list[SingleCharSegment] | None">
+      Per-character alignments. Only populated when `return_char_alignments=True`.
+    </ResponseField>
+    <ResponseField name="avg_logprob" type="float">Average log probability from Whisper.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="word_segments" type="list[SingleWordSegment]" required>
+  Flat list of all word segments across every aligned segment. Convenient for word-level iteration without nesting.
+</ResponseField>
+
+### Full signature
+
+```python
+def align(
+    transcript: Iterable[SingleSegment],
+    model: torch.nn.Module,
+    align_model_metadata: dict,
+    audio: str | np.ndarray | torch.Tensor,
+    device: str,
+    interpolate_method: str = "nearest",
+    return_char_alignments: bool = False,
+    print_progress: bool = False,
+    combined_progress: bool = False,
+    progress_callback: ProgressCallback = None,
+) -> AlignedTranscriptionResult:
+```
+
+---
+
+## Usage
+
+```python
+import whispermlx
+
+# Step 1: Transcribe
+model = whispermlx.load_model("large-v3", device="cpu")
+result = model.transcribe("audio.mp3")
+
+# Step 2: Load alignment model for detected language
+model_a, metadata = whispermlx.load_align_model(
+    language_code=result["language"],
+    device="cpu",
+)
+
+# Step 3: Align
+aligned = whispermlx.align(
+    result["segments"],
+    model_a,
+    metadata,
+    "audio.mp3",
+    device="cpu",
+    return_char_alignments=False,
+)
+
+# Word-level timestamps
+for word in aligned["word_segments"]:
+    print(f"{word['word']}: {word['start']:.3f}s - {word['end']:.3f}s (score: {word['score']:.3f})")
+```
+
+<Warning>
+  Alignment is language-specific and requires a wav2vec2 model trained for the target language. If no default model exists for a language, `load_align_model` raises a `ValueError`. You can pass a custom `model_name` for unsupported languages.
+</Warning>
+
+<Note>
+  When `task="translate"` is used during transcription, the output text is in English but the audio is not — forced alignment cannot be performed on translated output. Skip alignment in this case.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MLXWhisperPipeline.transcribe" icon="microphone" href="/api/transcribe">
+    Produce the transcript that alignment operates on.
+  </Card>
+  <Card title="Diarization" icon="users" href="/api/diarization">
+    Assign speaker labels to aligned segments.
+  </Card>
+  <Card title="Schema & Types" icon="code" href="/api/schema">
+    Full TypedDict definitions for AlignedTranscriptionResult.
+  </Card>
+</CardGroup>

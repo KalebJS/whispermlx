@@ -1,0 +1,73 @@
+---
+title: "CLI overview"
+description: "Transcribe audio files from the command line using whispermlx."
+---
+
+`whispermlx` is a command-line tool for transcribing audio files on Apple Silicon. It runs the full three-stage pipeline — VAD, Whisper transcription, optional alignment, and optional diarization — from a single command.
+
+## Basic syntax
+
+```bash
+whispermlx [audio_files...] [options]
+```
+
+One or more audio file paths are required as positional arguments. All other arguments are optional flags.
+
+## Quick examples
+
+<CodeGroup>
+
+```bash Basic transcription
+whispermlx audio.mp3 --model large-v3
+```
+
+```bash Specific language
+whispermlx audio.mp3 --model large-v3 --language en
+```
+
+```bash Translate to English
+whispermlx audio.mp3 --model large-v3 --task translate
+```
+
+```bash With diarization
+whispermlx audio.mp3 --model large-v3 --diarize --hf_token YOUR_TOKEN
+```
+
+```bash Custom output directory and format
+whispermlx audio.mp3 --model large-v3 --output_dir ./output --output_format srt
+```
+
+```bash Multiple audio files
+whispermlx audio1.mp3 audio2.mp3 --model small
+```
+
+```bash Full Hugging Face repo ID
+whispermlx audio.mp3 --model mlx-community/whisper-large-v3-turbo
+```
+
+</CodeGroup>
+
+## Check version
+
+```bash
+whispermlx --version
+whispermlx --python-version
+```
+
+## Audio files
+
+The first positional argument (or multiple) is the audio file path(s) to transcribe. You can pass any number of files and whispermlx will process them in order.
+
+```bash
+whispermlx meeting.mp3 interview.m4a lecture.wav --model large-v3
+```
+
+All common audio formats are supported — MP3, M4A, WAV, FLAC, and others that `ffmpeg` can decode.
+
+<Note>
+  MLX Whisper inference always runs on the Apple Silicon GPU automatically. The `--device` option only controls the device used for VAD, alignment, and diarization models.
+</Note>
+
+## Next steps
+
+See the full [CLI options reference](/cli/options) for every available flag, its type, default value, and description.

@@ -1,0 +1,138 @@
+---
+title: "CLI options"
+description: "Complete reference for every whispermlx command-line flag, its type, default value, and description."
+---
+
+All options for the `whispermlx` command are listed below, grouped by function. Run `whispermlx --help` to see the full list in your terminal.
+
+## Core options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `audio` | string (positional) | — | One or more audio file paths to transcribe. Required. |
+| `--model` | string | `small` | Whisper model name. Accepts a short name (e.g. `large-v3`) or a full Hugging Face repo ID (e.g. `mlx-community/whisper-large-v3-turbo`). |
+| `--task` | `transcribe` \| `translate` | `transcribe` | Whether to transcribe in the source language or translate to English. |
+| `--language` | string | auto-detect | Language spoken in the audio. Accepts a language code (e.g. `en`) or name (e.g. `English`). Leave unset to auto-detect. |
+| `--device` | string | `mps` | Device for VAD, alignment, and diarization models. MLX Whisper inference always uses Apple Silicon GPU regardless of this setting. |
+| `--batch_size` | int | `8` | Batch size for inference. |
+| `--compute_type` | `default` \| `float16` \| `float32` \| `int8` | `default` | Compute type for inference. Accepted for API compatibility but ignored by MLX — MLX manages its own precision. |
+| `--output_dir` / `-o` | string | `.` | Directory to write output files to. |
+| `--output_format` / `-f` | `all` \| `srt` \| `vtt` \| `txt` \| `tsv` \| `json` \| `aud` | `all` | Output format. `all` produces every format. |
+| `--verbose` | bool | `True` | Print progress and debug messages. |
+| `--log-level` | `debug` \| `info` \| `warning` \| `error` \| `critical` | — | Logging level. Overrides `--verbose` when set. |
+| `--version` / `-V` | — | — | Show the whispermlx version and exit. |
+| `--python-version` / `-P` | — | — | Show the Python version and exit. |
+
+<Tip>
+  Use `--output_format srt` with `--output_dir ./output` to get subtitle files in a specific directory without generating all other formats.
+</Tip>
+
+## Model loading options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--model_dir` | string | `~/.cache/whisper` | Directory to save downloaded model files. |
+| `--model_cache_only` | bool | `False` | If `True`, never download models — only load from the cache at `--model_dir`. Fails if the model is not already cached. |
+
+<Note>
+  Short model names like `large-v3` are automatically mapped to `mlx-community` Hugging Face repos. See the [model reference](/concepts/models) for the full mapping table.
+</Note>
+
+## Alignment options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--align_model` | string | — | Name of the phoneme-level ASR model to use for word-level alignment. Defaults to a language-appropriate wav2vec2 model. |
+| `--interpolate_method` | `nearest` \| `linear` \| `ignore` | `nearest` | Method for assigning timestamps to words that could not be aligned. `ignore` merges them into neighboring words. |
+| `--no_align` | flag | — | Skip phoneme alignment entirely. Word-level timestamps will not be produced. Subtitle formatting options also become unavailable. |
+| `--return_char_alignments` | flag | — | Include character-level alignment data in JSON output. |
+
+## VAD options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--vad_method` | `pyannote` \| `silero` | `pyannote` | VAD backend to use for detecting speech segments. |
+| `--vad_onset` | float | `0.500` | Onset threshold for VAD. Reduce if speech is not being detected. |
+| `--vad_offset` | float | `0.363` | Offset threshold for VAD. Reduce if speech segments are being cut off. |
+| `--chunk_size` | int | `30` | Maximum chunk size in seconds for merging VAD segments before passing to Whisper. Reduce if chunks are too long. |
+
+## Diarization options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--diarize` | flag | — | Enable speaker diarization. Assigns a speaker label to each segment and word. |
+| `--min_speakers` | int | — | Minimum number of speakers expected in the audio. |
+| `--max_speakers` | int | — | Maximum number of speakers expected in the audio. |
+| `--diarize_model` | string | `pyannote/speaker-diarization-community-1` | Hugging Face model ID for the speaker diarization pipeline. |
+| `--speaker_embeddings` | flag | — | Include speaker embedding vectors in JSON output. Only meaningful when `--diarize` is set. |
+| `--hf_token` | string | — | Hugging Face access token. Required for diarization — the pyannote model is gated. |
+
+<Warning>
+  Diarization requires a [Hugging Face access token](https://huggingface.co/settings/tokens) and prior acceptance of the [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) model agreement. Omitting `--hf_token` when `--diarize` is set will cause an error.
+</Warning>
+
+```bash
+# Full diarization example
+whispermlx audio.mp3 --model large-v3 --diarize --hf_token hf_xxxx --min_speakers 2 --max_speakers 4
+```
+
+## Inference options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--temperature` | float | `0` | Sampling temperature. `0` uses greedy decoding (most deterministic). |
+| `--best_of` | int | `5` | Number of candidate sequences to sample when temperature is non-zero. |
+| `--beam_size` | int | `5` | Number of beams for beam search. Only used when `--temperature` is `0`. |
+| `--patience` | float | `1.0` | Beam search patience factor. `1.0` is equivalent to standard beam search. |
+| `--length_penalty` | float | `1.0` | Token length penalty coefficient (alpha). `1.0` applies simple length normalization. |
+| `--suppress_tokens` | string | `"-1"` | Comma-separated token IDs to suppress during sampling. `"-1"` suppresses most special characters except common punctuation. |
+| `--suppress_numerals` | flag | — | Suppress numeric and currency symbols during sampling. Useful because wav2vec2 cannot align them reliably. |
+| `--initial_prompt` | string | — | Text prompt provided to the model for the first audio window. Useful for domain-specific vocabulary. |
+| `--hotwords` | string | — | Hint phrases for rare or technical terms (e.g. `"WhisperX, PyAnnote, GPU"`). Improves recognition accuracy for uncommon words. |
+| `--condition_on_previous_text` | bool | `False` | If `True`, the previous window's output is used as a prompt for the next window. Increases consistency but can cause the model to loop on failures. |
+| `--fp16` | bool | `True` | Run inference in fp16. |
+
+```bash
+# Hotwords and initial prompt example
+whispermlx lecture.mp3 --model large-v3 \
+  --hotwords "MLX, PyAnnote, whispermlx" \
+  --initial_prompt "This is a machine learning lecture."
+```
+
+## Decoding fallback options
+
+These thresholds control when Whisper considers a decoding attempt to have failed and retries with a higher temperature.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--temperature_increment_on_fallback` | float | `0.2` | Amount to increase `--temperature` by on each decoding fallback. |
+| `--compression_ratio_threshold` | float | `2.4` | If the gzip compression ratio of the output exceeds this value, the decoding is considered failed (repeated text compresses more). |
+| `--logprob_threshold` | float | `-1.0` | If the average log probability falls below this value, the decoding is considered failed. |
+| `--no_speech_threshold` | float | `0.6` | If the probability of the nospeech token exceeds this value and the log probability threshold is also breached, the segment is treated as silence. |
+
+## Subtitle formatting options
+
+These options control how word-level timestamps are formatted into subtitle segments. They require alignment (i.e. `--no_align` must not be set).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--max_line_width` | int | — | Maximum characters per subtitle line before breaking to a new line. |
+| `--max_line_count` | int | — | Maximum number of lines per subtitle segment. |
+| `--highlight_words` | bool | `False` | Underline each word as it is spoken in SRT and VTT output. |
+| `--segment_resolution` | `sentence` \| `chunk` | `sentence` | Accepted for compatibility. |
+
+```bash
+# Nicely formatted SRT with word highlighting
+whispermlx audio.mp3 --model large-v3 \
+  --output_format srt \
+  --max_line_width 42 \
+  --max_line_count 2 \
+  --highlight_words True
+```
+
+## Other options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--threads` | int | `0` | Number of CPU threads for torch. Kept for API compatibility with WhisperX; torch thread count is controlled by `MKL_NUM_THREADS` / `OMP_NUM_THREADS` environment variables. |
+| `--print_progress` | bool | `False` | Print a percentage progress indicator inside `transcribe()` and `align()` calls. |
