@@ -4,6 +4,10 @@
   Fast, accurate speech recognition on Apple Silicon — powered by <a href="https://github.com/ml-explore/mlx">MLX</a>.
 </p>
 
+<p align="center">
+  <a href="https://whispermlx.docs.kalebjs.dev">Documentation</a>
+</p>
+
 A fork of [WhisperX](https://github.com/m-bain/whisperX) with the inference backend replaced by [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper), running natively on Apple Silicon via MLX. Word-level timestamps, speaker diarization, and VAD are all retained.
 
 - ⚡️ MLX inference — runs on Apple Silicon GPU via unified memory
