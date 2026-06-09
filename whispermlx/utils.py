@@ -470,6 +470,8 @@ def get_writer(output_format: str, output_dir: str) -> Callable[[dict, str, dict
 
 
 def interpolate_nans(x, method="nearest"):
+    if method == "ignore":
+        return x
     if x.notnull().sum() > 1:
         return x.interpolate(method=method).ffill().bfill()
     else:

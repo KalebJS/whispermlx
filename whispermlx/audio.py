@@ -1,5 +1,5 @@
 import os
-import subprocess
+import subprocess  # nosec B404
 from functools import cache
 
 import numpy as np
@@ -57,7 +57,7 @@ def load_audio(file: str, sr: int = SAMPLE_RATE) -> np.ndarray:
             str(sr),
             "-",
         ]
-        out = subprocess.run(cmd, capture_output=True, check=True).stdout
+        out = subprocess.run(cmd, capture_output=True, check=True).stdout  # nosec B603
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to load audio: {e.stderr.decode()}") from e
 

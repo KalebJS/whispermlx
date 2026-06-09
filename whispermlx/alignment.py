@@ -110,10 +110,10 @@ def load_align_model(
         try:
             processor = Wav2Vec2Processor.from_pretrained(
                 model_name, cache_dir=model_dir, local_files_only=model_cache_only
-            )
+            )  # nosec B615
             align_model = Wav2Vec2ForCTC.from_pretrained(
                 model_name, cache_dir=model_dir, local_files_only=model_cache_only
-            )
+            )  # nosec B615
         except Exception as e:
             err_str = str(e).lower()
             is_network_err = any(

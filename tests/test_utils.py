@@ -137,6 +137,11 @@ class TestInterpolateNans:
         result = interpolate_nans(s)
         assert result.iloc[0] == pytest.approx(5.0)
 
+    def test_ignore_preserves_nans(self):
+        s = pd.Series([1.0, float("nan"), 3.0, float("nan"), 5.0])
+        result = interpolate_nans(s, method="ignore")
+        assert result.isna().sum() == 2
+
 
 class TestResultWriters:
     def _write(self, writer, result, tmp_path, audio_name="audio.wav"):

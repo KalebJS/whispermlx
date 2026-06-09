@@ -1,5 +1,6 @@
 """Test that align() produces word-level timestamps for unalignable characters."""
 
+import math
 from unittest.mock import MagicMock
 
 import torch
@@ -77,7 +78,7 @@ class TestAlignWithWildcards:
     }
     METADATA = {"language": "en", "dictionary": DICTIONARY, "type": "torchaudio"}
 
-    def _run_align(self, text, duration=5.0, num_frames=100):
+    def _run_align(self, text, duration=5.0, num_frames=100, interpolate_method="nearest"):
         """Run align() with a mock model on a single segment."""
         torch.manual_seed(0)
         emission = _make_emission(num_frames, self.DICTIONARY, list(text), blank_id=0)
@@ -94,6 +95,7 @@ class TestAlignWithWildcards:
             align_model_metadata=self.METADATA,
             audio=audio,
             device="cpu",
+            interpolate_method=interpolate_method,
         )
         return result
 
@@ -161,3 +163,19 @@ class TestAlignWithWildcards:
         assert "start" in words["4,9"], "'4,9' missing start"
         assert "end" in words["4,9"], "'4,9' missing end"
         assert "score" in words["4,9"], "'4,9' missing score"
+
+    def test_interpolate_ignore_does_not_crash(self):
+        result = self._run_align("the 99 cats", interpolate_method="ignore")
+        words = {w["word"]: w for w in result["word_segments"]}
+        assert len(words) == 3
+        for known in ("the", "cats"):
+            assert "start" in words[known], f"'{known}' missing start"
+            assert "end" in words[known], f"'{known}' missing end"
+
+    def test_interpolate_ignore_segment_timestamps_are_valid(self):
+        result = self._run_align("the 99 cats", interpolate_method="ignore")
+        for seg in result["segments"]:
+            assert isinstance(seg["start"], float), f"segment start not float: {seg['start']}"
+            assert isinstance(seg["end"], float), f"segment end not float: {seg['end']}"
+            assert not math.isnan(seg["start"]), "segment start is NaN"
+            assert not math.isnan(seg["end"]), "segment end is NaN"
