@@ -1,3 +1,9 @@
+## v3.12.2 (2026-06-11)
+
+### Fix
+
+- port upstream interpolation and CI sync
+
 ## v3.12.1 (2026-04-07)
 
 ### Fix
