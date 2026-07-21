@@ -70,4 +70,7 @@ jobs:
           cd "$workdir"
           uv venv --python "${{ matrix.python-version }}"
           uv pip install "$GITHUB_WORKSPACE"/dist/*.whl
-          uv run --no-project python -c "import whispermlx; print('Successfully imported whispermlx')"
+          # whispermlx imports its implementation modules lazily, so the package
+          # root alone loads neither numba nor llvmlite — the pair this job exists
+          # to guard. Import them explicitly.
+          uv run --no-project python -c "import whispermlx, numba, llvmlite; print('Successfully imported whispermlx, numba and llvmlite')"
