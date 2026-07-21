@@ -1,3 +1,9 @@
+## v3.12.3 (2026-07-21)
+
+### Fix
+
+- sync relevant upstream m-bain/whisperX changes
+
 ## v3.12.2 (2026-06-11)
 
 ### Fix
