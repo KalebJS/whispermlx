@@ -293,6 +293,32 @@ class TestLoadAlignModel:
         warning_text = " ".join(str(a) for a in mock_logger.warning.call_args[0])
         assert "--model_cache_only" in warning_text
 
+    def test_non_network_error_is_surfaced(self, mocker):
+        """A non-network failure must keep its own cause in the raised message.
+
+        A partially downloaded cache raises OSError about a missing
+        preprocessor_config.json. Reporting that as "model could not be found"
+        sends people looking for a model that exists and loads fine on retry.
+        """
+        import torchaudio
+
+        import whispermlx.alignment as alignment_module
+        from whispermlx.alignment import load_align_model
+
+        mocker.patch.object(torchaudio.pipelines, "__all__", [])
+        mocker.patch(
+            "whispermlx.alignment.Wav2Vec2Processor.from_pretrained",
+            side_effect=OSError("Can't load feature extractor for 'some/model'"),
+        )
+        mock_logger = mocker.patch.object(alignment_module, "logger")
+
+        with pytest.raises(ValueError, match="Can't load feature extractor"):
+            load_align_model("ru", "cpu")
+
+        error_text = " ".join(str(a) for a in mock_logger.error.call_args[0])
+        assert "OSError" in error_text
+        assert "not necessarily a missing model" in error_text
+
     def test_explicit_model_name_skips_default_lookup(self, mocker):
         """Explicit model_name should bypass default language mapping."""
         import torchaudio

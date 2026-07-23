@@ -132,12 +132,18 @@ def load_align_model(
                     "re-run with --model_cache_only to load from local cache."
                 )
             else:
-                print(e)
-                print(
-                    "Error loading model from huggingface, check https://huggingface.co/models for finetuned wav2vec2.0 models"
+                logger.error(
+                    f"Failed to load align_model {model_name!r}: {type(e).__name__}: {e}\n"
+                    "If the repo name is correct, this is not necessarily a missing model — "
+                    "an interrupted download, a gated repo or a cache permission problem "
+                    "raises here too. See https://huggingface.co/models for finetuned "
+                    "wav2vec2.0 models."
                 )
             raise ValueError(
-                f'The chosen align_model "{model_name}" could not be found in huggingface (https://huggingface.co/models) or torchaudio (https://pytorch.org/audio/stable/pipelines.html#id14)'
+                f'Could not load align_model "{model_name}" '
+                f"({type(e).__name__}: {e}). If the name is correct, check that the model is "
+                "reachable on huggingface (https://huggingface.co/models) or is a torchaudio "
+                "pipeline (https://pytorch.org/audio/stable/pipelines.html#id14)."
             ) from e
         pipeline_type = "huggingface"
         align_model = align_model.to(device)
