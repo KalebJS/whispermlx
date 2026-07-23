@@ -38,10 +38,6 @@ jobs:
       - name: Test import
         run: uv run python -c "import whispermlx; print('Successfully imported whispermlx')"
 
-  # The job above installs from uv.lock, so it never exercises the resolution
-  # a downstream `pip install whispermlx` actually performs. This one builds
-  # the wheel and installs it from outside the project tree, where neither the
-  # lockfile nor [tool.uv] settings apply — the same inputs PyPI users get.
   install-from-metadata:
     runs-on: macos-latest  # Apple Silicon — required for mlx-whisper
     permissions:
@@ -70,7 +66,4 @@ jobs:
           cd "$workdir"
           uv venv --python "${{ matrix.python-version }}"
           uv pip install "$GITHUB_WORKSPACE"/dist/*.whl
-          # whispermlx imports its implementation modules lazily, so the package
-          # root alone loads neither numba nor llvmlite — the pair this job exists
-          # to guard. Import them explicitly.
           uv run --no-project python -c "import whispermlx, numba, llvmlite; print('Successfully imported whispermlx, numba and llvmlite')"

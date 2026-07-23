@@ -11,11 +11,6 @@ license = { text = "BSD-2-Clause" }
 dependencies = [
     "mlx-whisper>=0.4.0",
     "nltk>=3.9.1",
-    # mlx-whisper depends on numba without a lower bound. Resolving from
-    # published metadata, numpy floats to >=2.5 and numba (capped at
-    # numpy<2.5) is backtracked to 0.53.1, which pulls llvmlite 0.36 and
-    # fails to build on Python >=3.10. 0.61 is the first release supporting
-    # modern numpy and Python 3.13.
     "numba>=0.61",
     "numpy>=2.1.0",
     "omegaconf>=2.3.0",
