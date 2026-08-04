@@ -1,3 +1,13 @@
+## v3.13.0 (2026-08-03)
+
+### Feat
+
+- add numba dependency and wheel installation CI job
+
+### Fix
+
+- keep the real cause when align model loading fails
+
 ## v3.12.3 (2026-07-21)
 
 ### Fix

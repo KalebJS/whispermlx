@@ -3011,7 +3011,7 @@ wheels = [
 
 [[package]]
 name = "whispermlx"
-version = "3.12.3"
+version = "3.13.0"
 source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },
