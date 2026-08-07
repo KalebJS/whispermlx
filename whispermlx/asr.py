@@ -1,6 +1,7 @@
 import contextlib
 import io
 
+import mlx.core as mx
 import mlx_whisper as _mlx_whisper_module
 import numpy as np
 from tqdm import tqdm
@@ -138,6 +139,8 @@ class MLXWhisperPipeline:
             chunk_text = mlx_result.get("text", "").strip()
             avg_logprob = _compute_avg_logprob(mlx_result.get("segments", []))
 
+            if (idx + 1) % 20 == 0:
+                mx.clear_cache()
             pbar.update(1)
             if verbose:
                 tqdm.write(
