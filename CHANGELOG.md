@@ -1,3 +1,9 @@
+## v3.13.1 (2026-08-07)
+
+### Fix
+
+- periodically clear MLX cache in transcription loop to bound memory growth
+
 ## v3.13.0 (2026-08-03)
 
 ### Feat

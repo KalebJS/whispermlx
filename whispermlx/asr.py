@@ -139,6 +139,12 @@ class MLXWhisperPipeline:
             chunk_text = mlx_result.get("text", "").strip()
             avg_logprob = _compute_avg_logprob(mlx_result.get("segments", []))
 
+            # NOTE: Each VAD segment has a different duration, so MLX's buffer
+            # cache accumulates new array shapes without bound across a long
+            # transcription loop, leaking GPU memory (a ~5h recording pushed a
+            # 32GB Mac into ~10GB of swap). clear_cache() only frees unreferenced
+            # buffers — it cannot affect computed results or evict the cached
+            # model weights. See https://github.com/KalebJS/whispermlx/pull/6
             if (idx + 1) % 20 == 0:
                 mx.clear_cache()
             pbar.update(1)
