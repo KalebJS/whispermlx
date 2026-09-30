@@ -1,3 +1,9 @@
+## v3.14.0 (2026-09-30)
+
+### Feat
+
+- port interleaved_context to MLX backend
+
 ## v3.13.1 (2026-08-07)
 
 ### Fix
