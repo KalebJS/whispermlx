@@ -90,6 +90,7 @@ whispermlx audio.mp3 --model large-v3 --diarize --hf_token hf_xxxx --min_speaker
 | `--initial_prompt` | string | — | Text prompt provided to the model for the first audio window. Useful for domain-specific vocabulary. |
 | `--hotwords` | string | — | Hint phrases for rare or technical terms (e.g. `"WhisperX, PyAnnote, GPU"`). Improves recognition accuracy for uncommon words. |
 | `--condition_on_previous_text` | bool | `False` | If `True`, the previous window's output is used as a prompt for the next window. Increases consistency but can cause the model to loop on failures. |
+| `--interleaved_context` | flag | — | Carry the preceding transcript into each VAD chunk's prompt. Improves continuity of punctuation and proper nouns across chunks. Carry-over pauses after a low-confidence or high-temperature decode so a failed chunk can't contaminate later chunks. |
 | `--fp16` | bool | `True` | Run inference in fp16. |
 
 ```bash
@@ -97,6 +98,9 @@ whispermlx audio.mp3 --model large-v3 --diarize --hf_token hf_xxxx --min_speaker
 whispermlx lecture.mp3 --model large-v3 \
   --hotwords "MLX, PyAnnote, whispermlx" \
   --initial_prompt "This is a machine learning lecture."
+
+# Carry context across chunks for consistent punctuation and terminology
+whispermlx lecture.mp3 --model large-v3 --interleaved_context
 ```
 
 ## Decoding fallback options

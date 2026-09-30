@@ -3,10 +3,13 @@
 import numpy as np
 import pytest
 
+from whispermlx.asr import INTERLEAVED_CONTEXT_MAX_CHARS
 from whispermlx.asr import MLX_MODEL_MAP
 from whispermlx.asr import MLXWhisperPipeline
 from whispermlx.asr import _compute_avg_logprob
+from whispermlx.asr import _join_prompts
 from whispermlx.asr import _resolve_mlx_model
+from whispermlx.asr import _trim_tail
 from whispermlx.vads.vad import Vad
 
 # ── Minimal VAD subclass for transcribe() tests ───────────────────────────────
@@ -101,6 +104,50 @@ class TestComputeAvgLogprob:
         segs = [{"tokens": [], "avg_logprob": -0.6}]
         result = _compute_avg_logprob(segs)
         assert result == pytest.approx(-0.6)
+
+
+# ── interleaved context helpers ──────────────────────────────────────────────
+
+
+class TestTrimTail:
+    def test_short_text_unchanged(self):
+        assert _trim_tail("hello world", 100) == "hello world"
+
+    def test_exact_length_unchanged(self):
+        text = "a" * 50
+        assert _trim_tail(text, 50) == text
+
+    def test_long_text_snaps_to_word_boundary(self):
+        # tail of 11 chars slices mid-word; result snaps to the last full word
+        assert _trim_tail("first second third", 11) == "third"
+
+    def test_no_space_in_tail_keeps_raw_tail(self):
+        assert _trim_tail("a" * 30, 5) == "a" * 5
+
+
+class TestJoinPrompts:
+    def test_both_empty_returns_none(self):
+        assert _join_prompts(None, "", 900) is None
+
+    def test_whitespace_only_returns_none(self):
+        assert _join_prompts("   ", "   ", 900) is None
+
+    def test_initial_prompt_only(self):
+        assert _join_prompts("domain terms", "", 900) == "domain terms"
+
+    def test_carried_context_only(self):
+        assert _join_prompts(None, "prior text", 900) == "prior text"
+
+    def test_combines_user_prompt_and_context(self):
+        assert _join_prompts("domain terms", "prior text", 900) == "domain terms prior text"
+
+    def test_user_prompt_exhausts_budget(self):
+        result = _join_prompts("a" * 900, "prior text", 900)
+        assert result == "a" * 900
+
+    def test_carried_context_trimmed_to_remaining_budget(self):
+        result = _join_prompts("prompt", "y" * 100, 20)
+        assert result == "prompt " + "y" * 14
 
 
 # ── MLXWhisperPipeline.transcribe ─────────────────────────────────────────────
@@ -263,6 +310,101 @@ class TestMLXWhisperPipelineTranscribe:
         result = pipeline.transcribe(audio)
         assert call_count[0] == 2
         assert len(result["segments"]) == 2
+
+
+# ── MLXWhisperPipeline.interleaved_context ───────────────────────────────────
+
+
+class TestInterleavedContext:
+    """interleaved_context carries each chunk's text into the next chunk's prompt."""
+
+    @staticmethod
+    def _result(text, avg_logprob=-0.3):
+        return {
+            "text": text,
+            "language": "en",
+            "segments": [
+                {"text": text, "tokens": [1, 2], "avg_logprob": avg_logprob, "temperature": 0.0}
+            ],
+        }
+
+    @staticmethod
+    def _make_pipeline(n_chunks=2):
+        starts = [idx * 5.0 for idx in range(n_chunks)]
+        vad = _MockVad(segments=[_Seg(start, start + 3.0) for start in starts])
+        vad.merge_chunks = staticmethod(
+            lambda segs, chunk_size, onset, offset: [
+                {"start": seg.start, "end": seg.end, "segments": []} for seg in segs
+            ]
+        )
+        return MLXWhisperPipeline(
+            model_path="mlx-community/whisper-tiny-mlx",
+            vad=vad,
+            vad_params={"vad_onset": 0.5, "vad_offset": 0.3},
+        )
+
+    def _run(self, mocker, mlx_results, initial_prompt=None, **transcribe_kwargs):
+        prompts = []
+
+        def fake_transcribe(*args, **kwargs):
+            prompts.append(kwargs.get("initial_prompt"))
+            return mlx_results[len(prompts) - 1]
+
+        mocker.patch("whispermlx.asr._mlx_whisper_module.transcribe", side_effect=fake_transcribe)
+        pipeline = self._make_pipeline(n_chunks=len(mlx_results))
+        if initial_prompt is not None:
+            pipeline.initial_prompt = initial_prompt
+        audio = np.zeros(SAMPLE_RATE * 30, dtype=np.float32)
+        result = pipeline.transcribe(audio, **transcribe_kwargs)
+        return result, prompts
+
+    def test_disabled_by_default_does_not_forward_context(self, mocker):
+        results = [self._result("alpha beta"), self._result("gamma")]
+        result, prompts = self._run(mocker, results)
+        assert prompts == [None, None]
+        assert [s["text"] for s in result["segments"]] == ["alpha beta", "gamma"]
+
+    def test_first_chunk_unconditioned_second_carries_context(self, mocker):
+        results = [self._result("alpha beta"), self._result("gamma")]
+        _, prompts = self._run(mocker, results, interleaved_context=True)
+        assert prompts[0] is None
+        assert prompts[1] == "alpha beta"
+
+    def test_user_prompt_combined_with_carried_context(self, mocker):
+        results = [self._result("alpha beta"), self._result("gamma")]
+        _, prompts = self._run(
+            mocker, results, initial_prompt="domain terms", interleaved_context=True
+        )
+        assert prompts[1] == "domain terms alpha beta"
+
+    def test_context_accumulates_across_chunks(self, mocker):
+        results = [
+            self._result("one"),
+            self._result("two"),
+            self._result("three"),
+        ]
+        _, prompts = self._run(mocker, results, interleaved_context=True)
+        assert prompts[1] == "one"
+        assert prompts[2] == "one two"
+
+    def test_carried_context_capped_to_max_chars(self, mocker):
+        long_text = " ".join(f"word{i}" for i in range(300))
+        results = [self._result(long_text), self._result("next")]
+        _, prompts = self._run(mocker, results, interleaved_context=True)
+        assert prompts[1] == _trim_tail(long_text, INTERLEAVED_CONTEXT_MAX_CHARS)
+        assert len(prompts[1]) <= INTERLEAVED_CONTEXT_MAX_CHARS
+
+    def test_low_logprob_chunk_not_carried(self, mocker):
+        results = [self._result("garbled text", avg_logprob=-2.0), self._result("gamma")]
+        _, prompts = self._run(mocker, results, interleaved_context=True)
+        assert prompts[1] is None
+
+    def test_high_temperature_chunk_not_carried(self, mocker):
+        bad = self._result("fallback text")
+        bad["segments"][0]["temperature"] = 0.8
+        results = [bad, self._result("gamma")]
+        _, prompts = self._run(mocker, results, interleaved_context=True)
+        assert prompts[1] is None
 
 
 SAMPLE_RATE = 16000

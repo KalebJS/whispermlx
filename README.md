@@ -40,6 +40,9 @@ whispermlx audio.mp3 --model large-v3 --diarize --hf_token YOUR_TOKEN
 
 # Use any mlx-community model directly
 whispermlx audio.mp3 --model mlx-community/whisper-large-v3-turbo
+
+# Carry transcript context across VAD chunks (better punctuation / proper nouns)
+whispermlx audio.mp3 --model large-v3 --interleaved_context
 ```
 
 ### Python
@@ -87,7 +90,7 @@ whispermlx tracks upstream [WhisperX](https://github.com/m-bain/whisperX)'s pipe
 | Output formats | srt, vtt, txt, tsv, json, aud | srt, vtt, txt, tsv, json, aud | Identical |
 | CLI flags | Full set | Full set | Identical; adds `--log-level` |
 | Python API | `load_model`, `transcribe`, `align`, `assign_word_speakers` | Same signatures | Drop-in compatible |
-| Batched inference | ✅ faster-whisper batching | ❌ per-segment | `batch_size` accepted but unused |
+| Batched inference | ✅ context-aware batching | ❌ per-segment | `batch_size` accepted but unused; `--interleaved_context` runs as sequential context carry-over instead of batched streams |
 | CUDA / NVIDIA GPU | ✅ | ❌ | Apple Silicon only |
 | Apple Silicon GPU | ❌ (CPU only) | ✅ MLX unified memory | Native, no CUDA |
 

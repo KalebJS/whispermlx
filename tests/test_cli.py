@@ -121,6 +121,15 @@ class TestCLIParsing:
         )
         assert captured["speaker_embeddings"] is True
 
+    def test_interleaved_context_flag(self, monkeypatch, tmp_path):
+        captured = {}
+        _run_cli(
+            monkeypatch,
+            ["whispermlx", str(tmp_path / "audio.wav"), "--interleaved_context"],
+            captured,
+        )
+        assert captured["interleaved_context"] is True
+
     def test_default_task_is_transcribe(self, monkeypatch, tmp_path):
         captured = {}
         _run_cli(monkeypatch, ["whispermlx", str(tmp_path / "audio.wav")], captured)

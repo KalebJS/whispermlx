@@ -60,6 +60,50 @@ def _compute_avg_logprob(mlx_segments: list) -> float:
     return weighted / total if total else 0.0
 
 
+# Interleaved context (upstream whisperX PR #1474, ported to sequential MLX
+# inference): each VAD chunk after the first is transcribed with a prompt built
+# from the preceding transcript. Whisper's text context is 448 tokens, but
+# upstream caps the carried context at 224 tokens (half the window) to leave
+# room for generation. mlx-whisper takes a text prompt, so the same cap is
+# approximated in characters (~4 chars per token).
+INTERLEAVED_CONTEXT_MAX_CHARS = 900
+# A chunk that decoded poorly is not fed forward. mlx-whisper's own fallback
+# resets its prompt above avg_logprob -1.0 / temperature 0.5, and feeding a
+# failed chunk's text forward is how conditioning turns one hallucinated
+# segment into a repetition loop for the rest of the file.
+CONTEXT_RESET_LOGPROB = -1.0
+CONTEXT_RESET_TEMPERATURE = 0.5
+
+
+def _trim_tail(text: str, max_chars: int) -> str:
+    """Keep the last max_chars of text, snapping the cut to a word boundary."""
+    if len(text) <= max_chars:
+        return text
+    tail = text[-max_chars:]
+    cut = tail.find(" ")
+    return tail[cut + 1 :].lstrip() if cut != -1 else tail.lstrip()
+
+
+def _join_prompts(initial_prompt: str | None, carried_context: str, max_chars: int) -> str | None:
+    """Combine the user's initial prompt with carried transcript context.
+
+    The user's prompt is kept in full; the carried context is trimmed to
+    whatever budget remains so the combined prompt stays within max_chars.
+    Returns None when there is nothing to prompt with.
+    """
+    parts: list[str] = []
+    budget = max_chars
+    if initial_prompt:
+        prompt = initial_prompt.strip()
+        if prompt:
+            parts.append(prompt)
+            budget -= len(prompt)
+    carried = carried_context.strip()
+    if carried and budget > 0:
+        parts.append(_trim_tail(carried, budget))
+    return " ".join(parts) if parts else None
+
+
 class MLXWhisperPipeline:
     """WhisperX transcription pipeline using mlx-whisper on Apple Silicon."""
 
@@ -91,6 +135,7 @@ class MLXWhisperPipeline:
         combined_progress: bool = False,
         verbose: bool = False,
         progress_callback: ProgressCallback = None,
+        interleaved_context: bool = False,
     ) -> TranscriptionResult:
         if isinstance(audio, str):
             audio = load_audio(audio)
@@ -116,11 +161,23 @@ class MLXWhisperPipeline:
         segments: list[SingleSegment] = []
         total_segments = len(vad_segments)
 
+        # Interleaved context (opt-in): carry the preceding transcript into
+        # each chunk's prompt for continuity. The first chunk has no carried
+        # context — analogous to upstream's stream 0, with no wrap-around
+        # re-run needed because chunks are transcribed in order.
+        carried_context = ""
+
         pbar = tqdm(total=total_segments, desc="Transcribing", unit="seg")
         for idx, vad_seg in enumerate(vad_segments):
             f1 = int(vad_seg["start"] * SAMPLE_RATE)
             f2 = int(vad_seg["end"] * SAMPLE_RATE)
             audio_chunk = audio[f1:f2]
+
+            chunk_prompt = self.initial_prompt
+            if interleaved_context and carried_context:
+                chunk_prompt = _join_prompts(
+                    self.initial_prompt, carried_context, INTERLEAVED_CONTEXT_MAX_CHARS
+                )
 
             with contextlib.redirect_stderr(io.StringIO()):
                 mlx_result = _mlx_whisper_module.transcribe(
@@ -129,7 +186,7 @@ class MLXWhisperPipeline:
                     language=effective_language,
                     task=effective_task,
                     verbose=False,
-                    initial_prompt=self.initial_prompt,
+                    initial_prompt=chunk_prompt,
                     word_timestamps=False,
                 )
 
@@ -138,6 +195,28 @@ class MLXWhisperPipeline:
 
             chunk_text = mlx_result.get("text", "").strip()
             avg_logprob = _compute_avg_logprob(mlx_result.get("segments", []))
+
+            # Feed the decoded text forward only when the chunk decoded
+            # reliably (good confidence, no high-temperature fallback), so a
+            # hallucinated segment cannot poison every later chunk.
+            if interleaved_context:
+                temperatures = [
+                    seg.get("temperature", 0.0) for seg in mlx_result.get("segments", [])
+                ]
+                if avg_logprob < CONTEXT_RESET_LOGPROB or any(
+                    t > CONTEXT_RESET_TEMPERATURE for t in temperatures
+                ):
+                    logger.debug(
+                        "Skipping context carry-over for chunk %d "
+                        "(avg_logprob=%.3f, temperature fallback detected).",
+                        idx,
+                        avg_logprob,
+                    )
+                else:
+                    carried_context = _trim_tail(
+                        f"{carried_context} {chunk_text}".strip(),
+                        INTERLEAVED_CONTEXT_MAX_CHARS,
+                    )
 
             # NOTE: Each VAD segment has a different duration, so MLX's buffer
             # cache accumulates new array shapes without bound across a long

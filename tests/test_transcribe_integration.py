@@ -316,6 +316,22 @@ class TestTranscribeTaskIntegration:
         assert mock_pipeline.transcribe.call_count == 2
         assert mock_writer.call_count == 2
 
+    def test_interleaved_context_forwarded_to_pipeline(self, tmp_path, mocker):
+        mock_pipeline = _make_mock_pipeline(mocker)
+        mocker.patch("whispermlx.transcribe.load_model", return_value=mock_pipeline)
+        mocker.patch(
+            "whispermlx.transcribe.load_audio", return_value=np.zeros(16000, dtype=np.float32)
+        )
+        mocker.patch("whispermlx.transcribe.get_writer", return_value=mocker.MagicMock())
+
+        from whispermlx.transcribe import transcribe_task
+
+        args = make_args(tmp_path, interleaved_context=True, no_align=True)
+        transcribe_task(args, _make_parser())
+
+        call_kwargs = mock_pipeline.transcribe.call_args[1]
+        assert call_kwargs["interleaved_context"] is True
+
     def test_temperature_increment_builds_tuple(self, tmp_path, mocker):
         captured = {}
 
