@@ -139,9 +139,27 @@ model = whispermlx.load_model(
 
 Hint phrases for rare or technical terms that the model might otherwise mishear:
 
-```bash
+<CodeGroup>
+
+```bash CLI
 whispermlx audio.mp3 --model large-v3 --hotwords "WhisperMLX, pyannote, MLX"
 ```
+
+```python Python
+model = whispermlx.load_model(
+    "large-v3",
+    device="cpu",
+    asr_options={"hotwords": "WhisperMLX, pyannote, MLX"},
+)
+```
+
+</CodeGroup>
+
+Hotwords are included in the prompt for every VAD chunk, and they still apply when combined with `--interleaved_context` — the carried transcript is trimmed around them.
+
+<Note>
+  Prompting biases the model rather than constraining it. Type hotwords exactly as you want them to appear, including casing.
+</Note>
 
 ## Progress tracking
 

@@ -101,7 +101,7 @@ whispermlx tracks upstream [WhisperX](https://github.com/m-bain/whisperX)'s pipe
 | `device` | Controls ASR + PyTorch models | Controls VAD/alignment/diarization only; MLX inference auto-uses GPU |
 | `compute_type` | float16 / float32 / int8 | Accepted, ignored |
 | `device_index`, `threads`, `download_root`, `local_files_only`, `use_auth_token` | Used | Accepted for compatibility, ignored |
-| `asr_options` | Full faster-whisper options | Only `initial_prompt` is used |
+| `asr_options` | Full faster-whisper options | Only `initial_prompt` and `hotwords` are used |
 | `--model` | faster-whisper model names | Short names map to `mlx-community` repos; full HF repo IDs also work |
 
 ### Dependencies

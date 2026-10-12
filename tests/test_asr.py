@@ -6,6 +6,7 @@ import pytest
 from whispermlx.asr import INTERLEAVED_CONTEXT_MAX_CHARS
 from whispermlx.asr import MLX_MODEL_MAP
 from whispermlx.asr import MLXWhisperPipeline
+from whispermlx.asr import _compose_prompt
 from whispermlx.asr import _compute_avg_logprob
 from whispermlx.asr import _join_prompts
 from whispermlx.asr import _resolve_mlx_model
@@ -148,6 +149,40 @@ class TestJoinPrompts:
     def test_carried_context_trimmed_to_remaining_budget(self):
         result = _join_prompts("prompt", "y" * 100, 20)
         assert result == "prompt " + "y" * 14
+
+
+class TestComposePrompt:
+    def test_nothing_supplied_returns_none(self):
+        assert _compose_prompt(None, None, "", 900) is None
+
+    def test_hotwords_only(self):
+        assert _compose_prompt("Kaleb, MLX", None, "", 900) == "Kaleb, MLX"
+
+    def test_initial_prompt_only(self):
+        assert _compose_prompt(None, "domain terms", "", 900) == "domain terms"
+
+    def test_hotwords_precede_initial_prompt(self):
+        result = _compose_prompt("Kaleb, MLX", "domain terms", "", 900)
+        assert result == "Kaleb, MLX domain terms"
+
+    def test_context_appended_after_fixed_parts(self):
+        result = _compose_prompt("Kaleb", "domain terms", "prior text", 900)
+        assert result == "Kaleb domain terms prior text"
+
+    def test_whitespace_hotwords_treated_as_none(self):
+        assert _compose_prompt("   ", None, "", 900) is None
+
+    def test_hotwords_stripped_of_surrounding_whitespace(self):
+        assert _compose_prompt("  Kaleb  ", "", "", 900) == "Kaleb"
+
+    def test_context_trimmed_to_remaining_budget_after_hotwords(self):
+        result = _compose_prompt("Kaleb", "prompt", "y" * 100, 20)
+        assert result == "Kaleb prompt " + "y" * 8
+
+    def test_fixed_parts_kept_full_when_budget_exhausted(self):
+        hotwords = "a" * 900
+        result = _compose_prompt(hotwords, "prompt", "prior text", 20)
+        assert result == hotwords + " prompt"
 
 
 # ── MLXWhisperPipeline.transcribe ─────────────────────────────────────────────
@@ -407,6 +442,87 @@ class TestInterleavedContext:
         assert prompts[1] is None
 
 
+# ── MLXWhisperPipeline.hotwords ───────────────────────────────────────────────
+
+
+class TestHotwords:
+    """hotwords are prepended to every chunk's prompt."""
+
+    @staticmethod
+    def _result(text, avg_logprob=-0.3):
+        return {
+            "text": text,
+            "language": "en",
+            "segments": [
+                {"text": text, "tokens": [1, 2], "avg_logprob": avg_logprob, "temperature": 0.0}
+            ],
+        }
+
+    @staticmethod
+    def _make_pipeline(n_chunks=2, hotwords=None, initial_prompt=None):
+        starts = [idx * 5.0 for idx in range(n_chunks)]
+        vad = _MockVad(segments=[_Seg(start, start + 3.0) for start in starts])
+        vad.merge_chunks = staticmethod(
+            lambda segs, chunk_size, onset, offset: [
+                {"start": seg.start, "end": seg.end, "segments": []} for seg in segs
+            ]
+        )
+        return MLXWhisperPipeline(
+            model_path="mlx-community/whisper-tiny-mlx",
+            vad=vad,
+            vad_params={"vad_onset": 0.5, "vad_offset": 0.3},
+            initial_prompt=initial_prompt,
+            hotwords=hotwords,
+        )
+
+    def _run(self, mocker, mlx_results, hotwords=None, initial_prompt=None, **transcribe_kwargs):
+        prompts = []
+
+        def fake_transcribe(*args, **kwargs):
+            prompts.append(kwargs.get("initial_prompt"))
+            return mlx_results[len(prompts) - 1]
+
+        mocker.patch("whispermlx.asr._mlx_whisper_module.transcribe", side_effect=fake_transcribe)
+        pipeline = self._make_pipeline(
+            n_chunks=len(mlx_results), hotwords=hotwords, initial_prompt=initial_prompt
+        )
+        audio = np.zeros(SAMPLE_RATE * 30, dtype=np.float32)
+        result = pipeline.transcribe(audio, **transcribe_kwargs)
+        return result, prompts
+
+    def test_absent_hotwords_leave_prompts_unset(self, mocker):
+        results = [self._result("alpha beta"), self._result("gamma")]
+        _, prompts = self._run(mocker, results)
+        assert prompts == [None, None]
+
+    def test_applied_to_every_chunk_without_interleaved_context(self, mocker):
+        results = [self._result("alpha beta"), self._result("gamma")]
+        _, prompts = self._run(mocker, results, hotwords="Kaleb, MLX")
+        assert prompts == ["Kaleb, MLX", "Kaleb, MLX"]
+
+    def test_applied_to_every_chunk_with_interleaved_context(self, mocker):
+        results = [self._result("alpha beta"), self._result("gamma")]
+        _, prompts = self._run(mocker, results, hotwords="Kaleb, MLX", interleaved_context=True)
+        assert prompts == ["Kaleb, MLX", "Kaleb, MLX alpha beta"]
+
+    def test_composed_with_initial_prompt_and_carried_context(self, mocker):
+        results = [self._result("alpha beta"), self._result("gamma")]
+        _, prompts = self._run(
+            mocker,
+            results,
+            hotwords="Kaleb",
+            initial_prompt="domain terms",
+            interleaved_context=True,
+        )
+        assert prompts[0] == "Kaleb domain terms"
+        assert prompts[1] == "Kaleb domain terms alpha beta"
+
+    def test_whitespace_hotwords_ignored(self, mocker):
+        results = [self._result("alpha beta")]
+        _, prompts = self._run(mocker, results, hotwords="   ")
+        assert prompts == [None]
+
+
 SAMPLE_RATE = 16000
 
 
@@ -460,6 +576,49 @@ class TestLoadModel:
             asr_options={"initial_prompt": "hello world"},
         )
         assert pipeline.initial_prompt == "hello world"
+
+    def test_hotwords_forwarded(self, mocker):
+        mocker.patch("whispermlx.asr.Silero").return_value = _MockVad()
+        from whispermlx.asr import load_model
+
+        pipeline = load_model(
+            "tiny",
+            device="cpu",
+            vad_method="silero",
+            asr_options={"hotwords": "Kaleb, whispermlx"},
+        )
+        assert pipeline.hotwords == "Kaleb, whispermlx"
+
+    def test_blank_hotwords_normalized_to_none(self, mocker):
+        mocker.patch("whispermlx.asr.Silero").return_value = _MockVad()
+        from whispermlx.asr import load_model
+
+        pipeline = load_model(
+            "tiny",
+            device="cpu",
+            vad_method="silero",
+            asr_options={"hotwords": "   "},
+        )
+        assert pipeline.hotwords is None
+
+    def test_hotwords_list_joined_to_string(self, mocker):
+        mocker.patch("whispermlx.asr.Silero").return_value = _MockVad()
+        from whispermlx.asr import load_model
+
+        pipeline = load_model(
+            "tiny",
+            device="cpu",
+            vad_method="silero",
+            asr_options={"hotwords": ["Kaleb", "whispermlx"]},
+        )
+        assert pipeline.hotwords == "Kaleb whispermlx"
+
+    def test_default_hotwords_none(self, mocker):
+        mocker.patch("whispermlx.asr.Silero").return_value = _MockVad()
+        from whispermlx.asr import load_model
+
+        pipeline = load_model("tiny", device="cpu", vad_method="silero")
+        assert pipeline.hotwords is None
 
     def test_vad_options_override_defaults(self, mocker):
         mocker.patch("whispermlx.asr.Silero").return_value = _MockVad()

@@ -85,11 +85,11 @@ def _trim_tail(text: str, max_chars: int) -> str:
 
 
 def _join_prompts(initial_prompt: str | None, carried_context: str, max_chars: int) -> str | None:
-    """Combine the user's initial prompt with carried transcript context.
+    """Combine the fixed prompt prefix with carried transcript context.
 
-    The user's prompt is kept in full; the carried context is trimmed to
-    whatever budget remains so the combined prompt stays within max_chars.
-    Returns None when there is nothing to prompt with.
+    The fixed prefix (hotwords + user's prompt) is kept in full; the carried
+    context is trimmed to whatever budget remains so the combined prompt stays
+    within max_chars. Returns None when there is nothing to prompt with.
     """
     parts: list[str] = []
     budget = max_chars
@@ -104,6 +104,19 @@ def _join_prompts(initial_prompt: str | None, carried_context: str, max_chars: i
     return " ".join(parts) if parts else None
 
 
+def _compose_prompt(
+    hotwords: str | None, initial_prompt: str | None, carried_context: str, max_chars: int
+) -> str | None:
+    """Build the per-chunk conditioning prompt.
+
+    Hotwords and the user's prompt are kept in full — hotwords first, matching
+    faster-whisper's get_prompt ordering — and the carried context is trimmed to
+    whatever budget remains. Returns None when there is nothing to prompt with.
+    """
+    fixed = " ".join(part.strip() for part in (hotwords, initial_prompt) if part and part.strip())
+    return _join_prompts(fixed or None, carried_context, max_chars)
+
+
 class MLXWhisperPipeline:
     """WhisperX transcription pipeline using mlx-whisper on Apple Silicon."""
 
@@ -115,13 +128,18 @@ class MLXWhisperPipeline:
         language: str | None = None,
         task: str = "transcribe",
         initial_prompt: str | None = None,
+        hotwords: str | None = None,
     ):
         self.model_path = model_path
         self.vad_model = vad
         self._vad_params = vad_params
         self.preset_language = language
         self.task = task
-        self.initial_prompt = initial_prompt
+        self.initial_prompt = (initial_prompt or "").strip() or None
+        # faster-whisper also accepts a list of words; join with spaces.
+        if isinstance(hotwords, list | tuple):
+            hotwords = " ".join(hotwords)
+        self.hotwords = (hotwords or "").strip() or None
 
     def transcribe(
         self,
@@ -173,11 +191,9 @@ class MLXWhisperPipeline:
             f2 = int(vad_seg["end"] * SAMPLE_RATE)
             audio_chunk = audio[f1:f2]
 
-            chunk_prompt = self.initial_prompt
-            if interleaved_context and carried_context:
-                chunk_prompt = _join_prompts(
-                    self.initial_prompt, carried_context, INTERLEAVED_CONTEXT_MAX_CHARS
-                )
+            chunk_prompt = _compose_prompt(
+                self.hotwords, self.initial_prompt, carried_context, INTERLEAVED_CONTEXT_MAX_CHARS
+            )
 
             with contextlib.redirect_stderr(io.StringIO()):
                 mlx_result = _mlx_whisper_module.transcribe(
@@ -277,7 +293,7 @@ def load_model(
             MLX inference uses the GPU automatically).
         device_index: Kept for API compatibility, unused.
         compute_type: Kept for API compatibility, ignored.
-        asr_options: Dict of ASR options; only "initial_prompt" is used.
+        asr_options: Dict of ASR options; only "initial_prompt" and "hotwords" are used.
         language: Language code, or None for auto-detection.
         vad_model: Pre-instantiated VAD model (overrides vad_method).
         vad_method: "pyannote" or "silero".
@@ -295,6 +311,7 @@ def load_model(
     logger.info(f"Loading MLX Whisper model: {model_path}")
 
     initial_prompt = (asr_options or {}).get("initial_prompt")
+    hotwords = (asr_options or {}).get("hotwords")
 
     default_vad_options = {
         "chunk_size": 30,
@@ -325,4 +342,5 @@ def load_model(
         language=language,
         task=task,
         initial_prompt=initial_prompt,
+        hotwords=hotwords,
     )

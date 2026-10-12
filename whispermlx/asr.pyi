@@ -12,6 +12,7 @@ class MLXWhisperPipeline:
     preset_language: str | None
     task: str
     initial_prompt: str | None
+    hotwords: str | None
 
     def __init__(
         self,
@@ -21,6 +22,7 @@ class MLXWhisperPipeline:
         language: str | None = ...,
         task: str = ...,
         initial_prompt: str | None = ...,
+        hotwords: str | None = ...,
     ) -> None: ...
     def transcribe(
         self,
@@ -34,6 +36,7 @@ class MLXWhisperPipeline:
         combined_progress: bool = ...,
         verbose: bool = ...,
         progress_callback: ProgressCallback = ...,
+        interleaved_context: bool = ...,
     ) -> TranscriptionResult: ...
 
 def load_model(

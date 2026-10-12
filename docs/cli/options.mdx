@@ -88,7 +88,7 @@ whispermlx audio.mp3 --model large-v3 --diarize --hf_token hf_xxxx --min_speaker
 | `--suppress_tokens` | string | `"-1"` | Comma-separated token IDs to suppress during sampling. `"-1"` suppresses most special characters except common punctuation. |
 | `--suppress_numerals` | flag | — | Suppress numeric and currency symbols during sampling. Useful because wav2vec2 cannot align them reliably. |
 | `--initial_prompt` | string | — | Text prompt provided to the model for the first audio window. Useful for domain-specific vocabulary. |
-| `--hotwords` | string | — | Hint phrases for rare or technical terms (e.g. `"WhisperX, PyAnnote, GPU"`). Improves recognition accuracy for uncommon words. |
+| `--hotwords` | string | — | Hint phrases for rare or technical terms (e.g. `"WhisperX, PyAnnote, GPU"`). Included in the prompt for every VAD chunk. |
 | `--condition_on_previous_text` | bool | `False` | If `True`, the previous window's output is used as a prompt for the next window. Increases consistency but can cause the model to loop on failures. |
 | `--interleaved_context` | flag | — | Carry the preceding transcript into each VAD chunk's prompt. Improves continuity of punctuation and proper nouns across chunks. Carry-over pauses after a low-confidence or high-temperature decode so a failed chunk can't contaminate later chunks. |
 | `--fp16` | bool | `True` | Run inference in fp16. |
