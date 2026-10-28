@@ -10,6 +10,7 @@ from whispermlx.schema import SingleSegment
 
 DEFAULT_ALIGN_MODELS_TORCH: dict[str, str]
 DEFAULT_ALIGN_MODELS_HF: dict[str, str]
+TORCHAUDIO_PIPELINE_TO_HF: dict[str, str]
 LANGUAGES_WITHOUT_SPACES: list[str]
 
 def load_align_model(

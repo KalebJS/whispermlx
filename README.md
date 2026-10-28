@@ -125,6 +125,7 @@ whispermlx tracks upstream [WhisperX](https://github.com/m-bain/whisperX)'s pipe
 | Alignment | transformers (wav2vec2) | transformers (wav2vec2) |
 | VAD + diarization | pyannote-audio | pyannote-audio |
 | Torch | CUDA/CPU wheels | CPU wheels only |
+| torchaudio | required | Required (CPU wheels); falls back to Hugging Face checkpoints if torchaudio is unusable |
 | Extra | triton, torchcodec | tqdm; optional `numba` via `[fast]` |
 
 ## Speaker Diarization
