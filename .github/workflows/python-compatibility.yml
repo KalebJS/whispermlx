@@ -65,5 +65,6 @@ jobs:
           workdir="$(mktemp -d)"
           cd "$workdir"
           uv venv --python "${{ matrix.python-version }}"
-          uv pip install "$GITHUB_WORKSPACE"/dist/*.whl
+          wheel="$(ls "$GITHUB_WORKSPACE"/dist/*.whl)"
+          uv pip install "$wheel[fast]"
           uv run --no-project python -c "import whispermlx, numba, llvmlite; print('Successfully imported whispermlx, numba and llvmlite')"

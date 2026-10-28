@@ -45,6 +45,19 @@ whispermlx audio.mp3 --model mlx-community/whisper-large-v3-turbo
 whispermlx audio.mp3 --model large-v3 --interleaved_context
 ```
 
+## Accelerated forced alignment (optional)
+
+```bash
+pip install "whispermlx[fast]"
+# or: pip install numba
+```
+
+Alignment uses dynamic programming over the wav2vec2 emissions, a Python loop that dominates
+long-audio alignment time. With [Numba](https://numba.pydata.org/) installed, whispermlx
+automatically JIT-compiles the trellis and backtrack loops (up to ~100× faster in our
+testing, with bit-identical results). Without Numba it silently falls back to native
+PyTorch — zero configuration either way.
+
 ### Python
 
 ```python
@@ -112,7 +125,7 @@ whispermlx tracks upstream [WhisperX](https://github.com/m-bain/whisperX)'s pipe
 | Alignment | transformers (wav2vec2) | transformers (wav2vec2) |
 | VAD + diarization | pyannote-audio | pyannote-audio |
 | Torch | CUDA/CPU wheels | CPU wheels only |
-| Extra | triton, torchcodec | numba, tqdm |
+| Extra | triton, torchcodec | tqdm; optional `numba` via `[fast]` |
 
 ## Speaker Diarization
 

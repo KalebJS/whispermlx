@@ -11,7 +11,6 @@ license = { text = "BSD-2-Clause" }
 dependencies = [
     "mlx-whisper>=0.4.0",
     "nltk>=3.9.1",
-    "numba>=0.61",
     "numpy>=2.1.0",
     "omegaconf>=2.3.0",
     "pandas>=2.2.3",
@@ -30,6 +29,7 @@ whispermlx = "whispermlx.__main__:cli"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "pytest-mock>=3.14"]
+fast = ["numba>=0.68.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
