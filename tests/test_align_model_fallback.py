@@ -2,6 +2,8 @@
 
 from unittest import mock
 
+import pytest
+
 import whispermlx.alignment as A
 
 
@@ -35,7 +37,7 @@ def test_load_align_model_falls_back_to_hf_when_torchaudio_missing():
         proc_cls.from_pretrained.return_value = fake_processor
         model_cls.from_pretrained.return_value = fake_model
 
-        model, metadata = A.load_align_model(language_code="en", device="cpu")
+        model, metadata = A.load_align_model(language_code="en", device="cpu", backend="torch")
 
     assert model is fake_model.to.return_value  # returned after .to(device)
     assert metadata["type"] == "huggingface"
@@ -44,3 +46,19 @@ def test_load_align_model_falls_back_to_hf_when_torchaudio_missing():
     remapped_name = proc_cls.from_pretrained.call_args.args[0]
     assert remapped_name == A.TORCHAUDIO_PIPELINE_TO_HF["WAV2VEC2_ASR_BASE_960H"]
     assert model_cls.from_pretrained.call_args.args[0] == remapped_name
+
+
+def test_bundle_name_is_remapped_before_backend_selection(mocker):
+    """The MLX backend receives the HF repo id, never the torchaudio alias."""
+    mlx_align = pytest.importorskip("whispermlx._mlx_align")
+
+    loader = mocker.patch.object(
+        mlx_align,
+        "load_mlx_align_model",
+        return_value=(object(), {"language": "en", "dictionary": {}, "type": "mlx"}),
+    )
+
+    model, metadata = A.load_align_model(language_code="en", device="cpu")
+
+    assert metadata["type"] == "mlx"
+    assert loader.call_args.args[1] == A.TORCHAUDIO_PIPELINE_TO_HF["WAV2VEC2_ASR_BASE_960H"]

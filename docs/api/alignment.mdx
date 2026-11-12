@@ -35,16 +35,20 @@ Loads a wav2vec2 alignment model for the given language. Returns a `(model, meta
   When `True`, load alignment models from local cache only — no network requests. Raises an error if the model is not already cached. Useful for offline environments.
 </ParamField>
 
+<ParamField path="backend" type="string" default="auto">
+  Which runtime runs the wav2vec2 encoder. `"auto"` uses the MLX backend and falls back to torch for checkpoints that ship only `.bin` weights. `"mlx"` raises `UnsupportedCheckpointError` for those checkpoints. `"torch"` always uses the torchaudio / Hugging Face path.
+</ParamField>
+
 ### Returns
 
 A tuple `(model, metadata)`:
 
-<ResponseField name="model" type="torch.nn.Module" required>
-  The loaded wav2vec2 model, moved to `device`. Pass this directly to `align()`.
+<ResponseField name="model" type="MLXWav2Vec2CTC | torch.nn.Module" required>
+  The loaded wav2vec2 model (an MLX module when `metadata["type"] == "mlx"`, otherwise `torch.nn.Module`). Pass this directly to `align()`.
 </ResponseField>
 
 <ResponseField name="metadata" type="dict" required>
-  Dictionary with keys `"language"`, `"dictionary"`, and `"type"`. Pass this directly to `align()`.
+  Dictionary with keys `"language"`, `"dictionary"`, and `"type"` (`"mlx"`, `"torchaudio"` or `"huggingface"`). Pass this directly to `align()`.
 </ResponseField>
 
 ### Full signature
@@ -56,6 +60,7 @@ def load_align_model(
     model_name: str | None = None,
     model_dir=None,
     model_cache_only: bool = False,
+    backend: str = "auto",
 ):
 ```
 
@@ -75,7 +80,7 @@ Aligns a list of transcription segments to word-level timestamps using forced al
   The `segments` list from a `TranscriptionResult` (i.e. `result["segments"]`).
 </ParamField>
 
-<ParamField path="model" type="torch.nn.Module" required>
+<ParamField path="model" type="MLXWav2Vec2CTC | torch.nn.Module" required>
   Alignment model returned by `load_align_model`.
 </ParamField>
 
@@ -83,8 +88,8 @@ Aligns a list of transcription segments to word-level timestamps using forced al
   Metadata dict returned by `load_align_model`.
 </ParamField>
 
-<ParamField path="audio" type="str | np.ndarray | torch.Tensor" required>
-  The same audio used for transcription. A file path string, a 16 kHz mono float32 numpy array, or a PyTorch tensor. File paths are loaded automatically via `load_audio`.
+<ParamField path="audio" type="str | np.ndarray" required>
+  The same audio used for transcription. A file path string or a 16 kHz mono float32 numpy array. File paths are loaded automatically via `load_audio`. PyTorch tensors are still accepted and converted to numpy.
 </ParamField>
 
 <ParamField path="device" type="string" required>
@@ -144,9 +149,9 @@ An [`AlignedTranscriptionResult`](/api/schema#alignedtranscriptionresult) TypedD
 ```python
 def align(
     transcript: Iterable[SingleSegment],
-    model: torch.nn.Module,
+    model: MLXWav2Vec2CTC | torch.nn.Module,
     align_model_metadata: dict,
-    audio: str | np.ndarray | torch.Tensor,
+    audio: str | np.ndarray,
     device: str,
     interpolate_method: str = "nearest",
     return_char_alignments: bool = False,

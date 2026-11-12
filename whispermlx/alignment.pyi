@@ -1,8 +1,9 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
+from typing import Protocol
 
 import numpy as np
-import torch
 
 from whispermlx.schema import AlignedTranscriptionResult
 from whispermlx.schema import ProgressCallback
@@ -13,18 +14,22 @@ DEFAULT_ALIGN_MODELS_HF: dict[str, str]
 TORCHAUDIO_PIPELINE_TO_HF: dict[str, str]
 LANGUAGES_WITHOUT_SPACES: list[str]
 
+class AlignModel(Protocol):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
+
 def load_align_model(
     language_code: str,
     device: str,
     model_name: str | None = ...,
     model_dir: str | None = ...,
     model_cache_only: bool = ...,
-) -> tuple[torch.nn.Module, dict]: ...
+    backend: str = ...,
+) -> tuple[AlignModel, dict]: ...
 def align(
     transcript: Iterable[SingleSegment],
-    model: torch.nn.Module,
+    model: AlignModel,
     align_model_metadata: dict,
-    audio: str | np.ndarray | torch.Tensor,
+    audio: str | np.ndarray,
     device: str,
     interpolate_method: str = ...,
     return_char_alignments: bool = ...,
@@ -33,10 +38,10 @@ def align(
     progress_callback: ProgressCallback = ...,
 ) -> AlignedTranscriptionResult: ...
 def get_trellis(
-    emission: torch.Tensor,
+    emission: np.ndarray,
     tokens: list[int],
     blank_id: int = ...,
-) -> torch.Tensor: ...
+) -> np.ndarray: ...
 @dataclass
 class Point:
     token_index: int
@@ -44,8 +49,8 @@ class Point:
     score: float
 
 def backtrack(
-    trellis: torch.Tensor,
-    emission: torch.Tensor,
+    trellis: np.ndarray,
+    emission: np.ndarray,
     tokens: list[int],
     blank_id: int = ...,
 ) -> list[Point] | None: ...

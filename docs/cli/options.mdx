@@ -43,6 +43,7 @@ All options for the `whispermlx` command are listed below, grouped by function. 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--align_model` | string | — | Name of the phoneme-level ASR model to use for word-level alignment. Defaults to a language-appropriate wav2vec2 model. |
+| `--align_backend` | `auto` \| `mlx` \| `torch` | `auto` | `auto` tries the MLX wav2vec2 backend and falls back to torch for checkpoints without safetensors. `mlx` hard-errors on those checkpoints; `torch` forces the previous PyTorch path. |
 | `--interpolate_method` | `nearest` \| `linear` \| `ignore` | `nearest` | Method for assigning timestamps to words that could not be aligned. `ignore` merges them into neighboring words. |
 | `--no_align` | flag | — | Skip phoneme alignment entirely. Word-level timestamps will not be produced. Subtitle formatting options also become unavailable. |
 | `--return_char_alignments` | flag | — | Include character-level alignment data in JSON output. |

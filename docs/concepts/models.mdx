@@ -80,7 +80,11 @@ The alignment stage uses wav2vec2 models to produce word-level timestamps. Model
 - **torchaudio pipelines** — used for `en`, `fr`, `de`, `es`, `it`
 - **HuggingFace models** — used for all other supported languages
 
+By default these run on the MLX backend (`--align_backend auto`). Checkpoints that publish only pickle (`.bin`) weights cannot run on MLX, so `auto` logs one line and falls back to the torch path for them. `--align_backend mlx` hard-errors instead; `--align_backend torch` forces the previous behaviour everywhere.
+
 ### Torch audio pipeline models
+
+The torchaudio pipeline names below are weight aliases: the loader resolves them to the equivalent Hugging Face repo before selecting a backend.
 
 | Language | Model |
 |---|---|
@@ -116,6 +120,10 @@ To use a custom alignment model, pass `--align_model <HF_REPO_ID>` on the CLI or
 <Warning>
   If no default alignment model exists for your language, `load_align_model()` raises a `ValueError`. You must supply a custom wav2vec2 model via `--align_model` or skip alignment with `--no_align`.
 </Warning>
+
+<Note>
+  Languages whose default checkpoint has no safetensors weights (`ja`, `zh`, `nl`, `pt`, `ar`, `ru`, `pl`, `hu`, `fi`, `fa`, `el`, `gl`, `ml`, `sk`, `sl`, `te`, `tl`, `tr`, `vi`, `id`, `ka`, `ca` and the four `fr`/`de`/`es`/`it` VoxPopuli repos) fall back to torch under `--align_backend auto`. See the [alignment guide](/guides/alignment#backends).
+</Note>
 
 ---
 

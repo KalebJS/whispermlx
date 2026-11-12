@@ -123,7 +123,18 @@ def load_align_model(
     model_name: str | None = None,
     model_dir=None,
     model_cache_only: bool = False,
+    backend: str = "auto",
 ):
+    """Load a wav2vec2 CTC alignment model.
+
+    ``backend`` selects how the checkpoint is run: ``"mlx"`` is the Metal
+    encoder, ``"torch"`` is the pre-existing torchaudio / Hugging Face path, and
+    ``"auto"`` tries MLX first and falls back to torch for checkpoints without
+    safetensors weights.
+    """
+    if backend not in ("auto", "mlx", "torch"):
+        raise ValueError(f"Unknown align backend: {backend!r} (expected auto, mlx or torch)")
+
     if model_name is None:
         # use default model
         if language_code in DEFAULT_ALIGN_MODELS_TORCH:
@@ -138,6 +149,38 @@ def load_align_model(
             )
             raise ValueError(f"No default align-model for language: {language_code}")
 
+    # torchaudio pipeline names are only weight aliases now. Resolve them to the
+    # equivalent HF repo before picking a backend, so the MLX path and the
+    # torchaudio-unavailable fallback load the same checkpoint.
+    hf_model_name = TORCHAUDIO_PIPELINE_TO_HF.get(model_name, model_name)
+
+    if backend in ("auto", "mlx"):
+        try:
+            from whispermlx import _mlx_align
+        except ImportError as e:
+            if backend == "mlx":
+                raise ImportError(
+                    "The MLX alignment backend requires the 'mlx-audio' package: "
+                    "install it with `pip install mlx-audio`, or use --align_backend torch"
+                ) from e
+            logger.info("MLX alignment unavailable (%s); using the torch backend", e)
+        else:
+            try:
+                return _mlx_align.load_mlx_align_model(
+                    language_code,
+                    hf_model_name,
+                    model_dir=model_dir,
+                    model_cache_only=model_cache_only,
+                )
+            except _mlx_align.UnsupportedCheckpointError as e:
+                if backend == "mlx":
+                    raise
+                logger.info(
+                    "MLX alignment unavailable for %s (%s); using the torch backend",
+                    hf_model_name,
+                    e,
+                )
+
     if torchaudio is not None and model_name in torchaudio.pipelines.__all__:
         pipeline_type = "torchaudio"
         bundle = torchaudio.pipelines.__dict__[model_name]
@@ -145,16 +188,14 @@ def load_align_model(
         labels = bundle.get_labels()
         align_dictionary = {c.lower(): i for i, c in enumerate(labels)}
     else:
-        # When torchaudio is unavailable, map torchaudio.pipelines model names
-        # to their equivalent HF checkpoints.
-        if torchaudio is None and model_name in TORCHAUDIO_PIPELINE_TO_HF:
-            model_name = TORCHAUDIO_PIPELINE_TO_HF[model_name]
+        # When torchaudio is unavailable, TORCHAUDIO_PIPELINE_TO_HF already
+        # rewrote the bundle name into an HF repo id above.
         try:
             processor = Wav2Vec2Processor.from_pretrained(
-                model_name, cache_dir=model_dir, local_files_only=model_cache_only
+                hf_model_name, cache_dir=model_dir, local_files_only=model_cache_only
             )  # nosec B615
             align_model = Wav2Vec2ForCTC.from_pretrained(
-                model_name, cache_dir=model_dir, local_files_only=model_cache_only
+                hf_model_name, cache_dir=model_dir, local_files_only=model_cache_only
             )  # nosec B615
         except Exception as e:
             err_str = str(e).lower()
@@ -175,14 +216,14 @@ def load_align_model(
                 )
             else:
                 logger.error(
-                    f"Failed to load align_model {model_name!r}: {type(e).__name__}: {e}\n"
+                    f"Failed to load align_model {hf_model_name!r}: {type(e).__name__}: {e}\n"
                     "If the repo name is correct, this is not necessarily a missing model — "
                     "an interrupted download, a gated repo or a cache permission problem "
                     "raises here too. See https://huggingface.co/models for finetuned "
                     "wav2vec2.0 models."
                 )
             raise ValueError(
-                f'Could not load align_model "{model_name}" '
+                f'Could not load align_model "{hf_model_name}" '
                 f"({type(e).__name__}: {e}). If the name is correct, check that the model is "
                 "reachable on huggingface (https://huggingface.co/models) or is a torchaudio "
                 "pipeline (https://pytorch.org/audio/stable/pipelines.html#id14)."
@@ -219,18 +260,25 @@ def align(
     Align phoneme recognition predictions to known transcription.
     """
 
-    if not torch.is_tensor(audio):
-        if isinstance(audio, str):
-            audio = load_audio(audio)
-        audio = torch.from_numpy(audio)
-    if len(audio.shape) == 1:
-        audio = audio.unsqueeze(0)
+    if isinstance(audio, str):
+        audio = load_audio(audio)
+    elif torch.is_tensor(audio):
+        audio = audio.detach().cpu().numpy()
+
+    audio = np.asarray(audio, dtype=np.float32)
+    if audio.ndim == 1:
+        audio = audio[None, :]
 
     MAX_DURATION = audio.shape[1] / SAMPLE_RATE
 
     model_dictionary = align_model_metadata["dictionary"]
     model_lang = align_model_metadata["language"]
     model_type = align_model_metadata["type"]
+
+    if model_type == "mlx":
+        # Imported lazily so torch-only installs never pay for mlx.
+        import mlx.core as mx
+        import mlx.nn as nn
 
     # Use language-specific Punkt model if available otherwise we fallback to English.
     punkt_lang = PUNKT_LANGUAGES.get(model_lang, "english")
@@ -345,22 +393,28 @@ def align(
         # Handle the minimum input length for wav2vec2 models
         if waveform_segment.shape[-1] < 400:
             lengths = torch.as_tensor([waveform_segment.shape[-1]]).to(device)
-            waveform_segment = torch.nn.functional.pad(
-                waveform_segment, (0, 400 - waveform_segment.shape[-1])
+            waveform_segment = np.pad(
+                waveform_segment, ((0, 0), (0, 400 - waveform_segment.shape[-1]))
             )
         else:
             lengths = None
 
-        with torch.inference_mode():
-            if model_type == "torchaudio":
-                emissions, _ = model(waveform_segment.to(device), lengths=lengths)
-            elif model_type == "huggingface":
-                emissions = model(waveform_segment.to(device)).logits
-            else:
-                raise NotImplementedError(f"Align model of type {model_type} not supported.")
-            emissions = torch.log_softmax(emissions, dim=-1)
-
-        emission = emissions[0].cpu().detach()
+        if model_type == "mlx":
+            logits = model(mx.array(waveform_segment))
+            # mlx.core exposes logsumexp/softmax but not log_softmax directly.
+            emission = np.asarray(nn.log_softmax(logits[0], axis=-1), dtype=np.float32)
+        elif model_type == "torchaudio":
+            with torch.inference_mode():
+                emissions, _ = model(torch.from_numpy(waveform_segment).to(device), lengths=lengths)
+                emissions = torch.log_softmax(emissions, dim=-1)
+            emission = emissions[0].cpu().detach().numpy().astype(np.float32)
+        elif model_type == "huggingface":
+            with torch.inference_mode():
+                emissions = model(torch.from_numpy(waveform_segment).to(device)).logits
+                emissions = torch.log_softmax(emissions, dim=-1)
+            emission = emissions[0].cpu().detach().numpy().astype(np.float32)
+        else:
+            raise NotImplementedError(f"Align model of type {model_type} not supported.")
 
         blank_id = 0
         for char, code in model_dictionary.items():
@@ -371,14 +425,16 @@ def align(
         has_wildcard = any(c not in model_dictionary for c in text_clean)
         if has_wildcard:
             # Extend emission with a wildcard column: max non-blank score per frame
-            non_blank_mask = torch.ones(emission.size(1), dtype=torch.bool)
+            non_blank_mask = np.ones(emission.shape[1], dtype=bool)
             non_blank_mask[blank_id] = False
-            wildcard_col = emission[:, non_blank_mask].max(dim=1).values
-            emission = torch.cat([emission, wildcard_col.unsqueeze(1)], dim=1)
-            wildcard_id = emission.size(1) - 1
+            wildcard_col = emission[:, non_blank_mask].max(axis=1)
+            emission = np.concatenate([emission, wildcard_col[:, None]], axis=1)
+            wildcard_id = emission.shape[1] - 1
             tokens = [model_dictionary.get(c, wildcard_id) for c in text_clean]
         else:
             tokens = [model_dictionary[c] for c in text_clean]
+
+        emission = np.ascontiguousarray(emission, dtype=np.float32)
 
         trellis = get_trellis(emission, tokens, blank_id)
         path = backtrack(trellis, emission, tokens, blank_id)
@@ -393,7 +449,7 @@ def align(
         char_segments = merge_repeats(path, text_clean)
 
         duration = t2 - t1
-        ratio = duration * waveform_segment.size(0) / (trellis.size(0) - 1)
+        ratio = duration * waveform_segment.shape[0] / (trellis.shape[0] - 1)
 
         # assign timestamps to aligned characters
         char_segments_arr = []
@@ -624,45 +680,55 @@ if _HAS_NUMBA:
         )
 
 
-def get_trellis(emission, tokens, blank_id=0):
-    if _HAS_NUMBA:
-        emission_np = emission.detach().cpu().numpy().astype(np.float32)
-        tokens_np = np.asarray(tokens, dtype=np.int64)
-        trellis_np = _get_trellis_core(emission_np, tokens_np, blank_id)
-        return torch.from_numpy(trellis_np)
+def _as_numpy(x) -> np.ndarray:
+    """Coerce torch tensors and array-likes to a numpy array."""
+    if torch.is_tensor(x):
+        return x.detach().cpu().numpy()
+    return np.asarray(x)
 
-    # Fallback: Native PyTorch (when Numba is not installed)
-    num_frame = emission.size(0)
-    num_tokens = len(tokens)
+
+def _as_float32(x) -> np.ndarray:
+    """``_as_numpy`` as C-contiguous float32 (a no-op for arrays already so)."""
+    return np.ascontiguousarray(_as_numpy(x), dtype=np.float32)
+
+
+def get_trellis(emission, tokens, blank_id=0):
+    """CTC trellis over a ``[num_frames, vocab]`` log-probability matrix."""
+    emission_np = _as_float32(emission)
+    tokens_np = np.asarray(tokens, dtype=np.int64)
+
+    if _HAS_NUMBA:
+        return _get_trellis_core(emission_np, tokens_np, blank_id)
+
+    # Fallback: pure numpy (when Numba is not installed)
+    num_frame = emission_np.shape[0]
+    num_tokens = len(tokens_np)
 
     # Trellis has extra dimensions for both time axis and tokens.
     # The extra dim for tokens represents <SoS> (start-of-sentence)
     # The extra dim for time axis is for simplification of the code.
-    trellis = torch.empty((num_frame + 1, num_tokens + 1))
-    trellis[0, 0] = 0
-    trellis[1:, 0] = torch.cumsum(emission[:, blank_id], 0)
-    trellis[0, -num_tokens:] = -float("inf")
-    trellis[-num_tokens:, 0] = float("inf")
+    trellis = np.empty((num_frame + 1, num_tokens + 1), dtype=np.float32)
+    trellis[0, 0] = 0.0
+    trellis[1:, 0] = np.cumsum(emission_np[:, blank_id])
+    trellis[0, -num_tokens:] = -np.inf
+    trellis[-num_tokens:, 0] = np.inf
 
     for t in range(num_frame):
-        trellis[t + 1, 1:] = torch.maximum(
+        trellis[t + 1, 1:] = np.maximum(
             # Score for staying at the same token
-            trellis[t, 1:] + emission[t, blank_id],
+            trellis[t, 1:] + emission_np[t, blank_id],
             # Score for changing to the next token
-            trellis[t, :-1] + emission[t, tokens],
+            trellis[t, :-1] + emission_np[t, tokens_np],
         )
     return trellis
 
 
 def backtrack(trellis, emission, tokens, blank_id=0):
+    trellis_np = _as_numpy(trellis)
+    emission_np = _as_float32(emission)
+    tokens_np = np.asarray(tokens, dtype=np.int64)
+
     if _HAS_NUMBA:
-        trellis_np = trellis.numpy() if torch.is_tensor(trellis) else trellis
-        emission_np = (
-            emission.detach().cpu().numpy().astype(np.float32)
-            if torch.is_tensor(emission)
-            else emission
-        )
-        tokens_np = np.asarray(tokens, dtype=np.int64)
         path_tok, path_time, path_score, ok = _backtrack_core(
             trellis_np, emission_np, tokens_np, blank_id
         )
@@ -673,7 +739,7 @@ def backtrack(trellis, emission, tokens, blank_id=0):
             for a, b, c in zip(path_tok, path_time, path_score, strict=False)
         ]
 
-    # Fallback: Native PyTorch (when Numba is not installed)
+    # Fallback: pure numpy (when Numba is not installed)
     # Note:
     # j and t are indices for trellis, which has extra dimensions
     # for time and tokens at the beginning.
@@ -681,8 +747,8 @@ def backtrack(trellis, emission, tokens, blank_id=0):
     # the corresponding index in emission is `T-1`.
     # Similarly, when referring to token index `J` in trellis,
     # the corresponding index in transcript is `J-1`.
-    j = trellis.size(1) - 1
-    t_start = torch.argmax(trellis[:, j]).item()
+    j = trellis_np.shape[1] - 1
+    t_start = int(np.argmax(trellis_np[:, j]))
 
     path = []
     for t in range(t_start, 0, -1):
@@ -690,12 +756,13 @@ def backtrack(trellis, emission, tokens, blank_id=0):
         # Note (again):
         # `emission[J-1]` is the emission at time frame `J` of trellis dimension.
         # Score for token staying the same from time frame J-1 to T.
-        stayed = trellis[t - 1, j] + emission[t - 1, blank_id]
+        stayed = trellis_np[t - 1, j] + emission_np[t - 1, blank_id]
         # Score for token changing from C-1 at T-1 to J at T.
-        changed = trellis[t - 1, j - 1] + emission[t - 1, tokens[j - 1]]
+        changed = trellis_np[t - 1, j - 1] + emission_np[t - 1, tokens_np[j - 1]]
 
         # 2. Store the path with frame-wise probability.
-        prob = emission[t - 1, tokens[j - 1] if changed > stayed else blank_id].exp().item()
+        label = tokens_np[j - 1] if changed > stayed else blank_id
+        prob = float(np.exp(emission_np[t - 1, label]))
         # Return token index and time index in non-trellis coordinate.
         path.append(Point(j - 1, t - 1, prob))
 

@@ -30,12 +30,13 @@ uv add whispermlx
 This installs all required dependencies, including:
 
 - `mlx-whisper` — ASR inference on Apple Silicon
-- `torch` and `torchaudio` — CPU wheels, used by VAD and alignment models
-- `transformers` — wav2vec2 alignment models
+- `mlx-audio` — MLX wav2vec2 encoder used by the alignment stage
+- `torch` and `torchaudio` — CPU wheels, used by VAD, diarization and the alignment fallback
+- `transformers` — alignment fallback for checkpoints without safetensors weights
 - `pyannote-audio` — VAD and speaker diarization
 
 <Note>
-  `torch` and `torchaudio` are installed as CPU wheels from the PyTorch CPU index. They are used for VAD and alignment — not for Whisper inference, which runs via MLX.
+  `torch` and `torchaudio` are installed as CPU wheels from the PyTorch CPU index. They are used for VAD, diarization and the alignment fallback — not for Whisper inference, which runs via MLX.
 </Note>
 
 ## Model downloads

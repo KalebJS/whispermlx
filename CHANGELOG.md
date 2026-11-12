@@ -1,3 +1,9 @@
+## Unreleased
+
+### Feat
+
+- MLX wav2vec2 alignment backend with torch fallback
+
 ## v3.14.0 (2026-09-30)
 
 ### Feat

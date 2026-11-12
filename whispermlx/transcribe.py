@@ -45,6 +45,7 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
     os.makedirs(output_dir, exist_ok=True)
 
     align_model: str = args.pop("align_model")
+    align_backend: str = args.pop("align_backend", "auto")
     interpolate_method: str = args.pop("interpolate_method")
     no_align: bool = args.pop("no_align")
     task: str = args.pop("task")
@@ -174,7 +175,7 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
         tmp_results = results
         results = []
         align_model, align_metadata = load_align_model(
-            align_language, device, model_name=align_model, model_dir=model_dir, model_cache_only=model_cache_only
+            align_language, device, model_name=align_model, model_dir=model_dir, model_cache_only=model_cache_only, backend=align_backend
         )
         for result, audio_path in tmp_results:
             # >> Align
@@ -191,7 +192,7 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
                         f"New language found ({result['language']})! Previous was ({align_metadata['language']}), loading new alignment model for new language..."
                     )
                     align_model, align_metadata = load_align_model(
-                        result["language"], device, model_dir=model_dir, model_cache_only=model_cache_only
+                        result["language"], device, model_dir=model_dir, model_cache_only=model_cache_only, backend=align_backend
                     )
                 logger.info("Performing alignment...")
                 result: AlignedTranscriptionResult = align(

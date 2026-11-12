@@ -1,5 +1,9 @@
 """Tests for lower-level alignment functions and load_align_model."""
 
+import json
+import sys
+
+import numpy as np
 import pytest
 import torch
 
@@ -53,7 +57,16 @@ class TestGetTrellis:
         tokens = [1, 2]
         trellis = get_trellis(emission, tokens)
         # Body cells should be finite (not nan)
-        assert not torch.isnan(trellis[1:, 1:]).any()
+        assert not np.isnan(trellis[1:, 1:]).any()
+
+    def test_accepts_numpy_emission(self):
+        """The DP is numpy-native; align() feeds it numpy arrays."""
+        emission = np.zeros((5, 4), dtype=np.float32)
+        tokens = [1, 2]
+        trellis_from_numpy = get_trellis(emission, tokens)
+        trellis_from_torch = get_trellis(torch.from_numpy(emission), tokens)
+        assert isinstance(trellis_from_numpy, np.ndarray)
+        np.testing.assert_array_equal(trellis_from_numpy, trellis_from_torch)
 
 
 # ── backtrack ─────────────────────────────────────────────────────────────────
@@ -238,7 +251,7 @@ class TestLoadAlignModel:
             {"WAV2VEC2_ASR_BASE_960H": mock_bundle},
         )
 
-        model, metadata = load_align_model("en", "cpu")
+        model, metadata = load_align_model("en", "cpu", backend="torch")
         assert metadata["type"] == "torchaudio"
         assert metadata["language"] == "en"
         assert "a" in metadata["dictionary"]
@@ -267,7 +280,7 @@ class TestLoadAlignModel:
         # Ensure "ja" is NOT in torchaudio.__all__
         mocker.patch.object(torchaudio.pipelines, "__all__", [])
 
-        model, metadata = load_align_model("ja", "cpu")
+        model, metadata = load_align_model("ja", "cpu", backend="torch")
         assert metadata["type"] == "huggingface"
         assert metadata["language"] == "ja"
         assert "a" in metadata["dictionary"]
@@ -288,7 +301,7 @@ class TestLoadAlignModel:
         mock_logger = mocker.patch.object(alignment_module, "logger")
 
         with pytest.raises(ValueError):
-            load_align_model("tr", "cpu")
+            load_align_model("tr", "cpu", backend="torch")
 
         warning_text = " ".join(str(a) for a in mock_logger.warning.call_args[0])
         assert "--model_cache_only" in warning_text
@@ -313,7 +326,7 @@ class TestLoadAlignModel:
         mock_logger = mocker.patch.object(alignment_module, "logger")
 
         with pytest.raises(ValueError, match="Can't load feature extractor"):
-            load_align_model("ru", "cpu")
+            load_align_model("ru", "cpu", backend="torch")
 
         error_text = " ".join(str(a) for a in mock_logger.error.call_args[0])
         assert "OSError" in error_text
@@ -338,5 +351,172 @@ class TestLoadAlignModel:
         )
         mocker.patch.object(torchaudio.pipelines, "__all__", [])
 
-        model, metadata = load_align_model("en", "cpu", model_name="custom/model-name")
+        model, metadata = load_align_model(
+            "en", "cpu", model_name="custom/model-name", backend="torch"
+        )
         assert metadata["type"] == "huggingface"
+
+
+# ── MLX backend ───────────────────────────────────────────────────────────────
+
+
+class TestMLXBackend:
+    def test_mlx_loader_lowercases_dictionary(self, mocker, tmp_path):
+        """load_mlx_align_model returns type=mlx and a lower-cased dictionary."""
+        import whispermlx._mlx_align as mlx_align
+
+        (tmp_path / "vocab.json").write_text(json.dumps({"<PAD>": 0, "A": 1, "B": 2}))
+        fake_model = object()
+        mocker.patch.object(mlx_align, "resolve_checkpoint", return_value=tmp_path)
+        mocker.patch.object(
+            mlx_align.MLXWav2Vec2CTC, "from_pretrained_local", return_value=fake_model
+        )
+
+        model, metadata = mlx_align.load_mlx_align_model("en", "facebook/wav2vec2-base-960h")
+
+        assert model is fake_model
+        assert metadata["type"] == "mlx"
+        assert metadata["language"] == "en"
+        assert metadata["dictionary"] == {"<pad>": 0, "a": 1, "b": 2}
+
+    def test_load_align_model_uses_mlx(self, mocker):
+        """auto picks MLX and passes the HF repo id, not the bundle alias."""
+        import whispermlx._mlx_align as mlx_align
+        from whispermlx.alignment import load_align_model
+
+        loader = mocker.patch.object(
+            mlx_align,
+            "load_mlx_align_model",
+            return_value=(
+                mocker.MagicMock(),
+                {"language": "en", "dictionary": {"<pad>": 0}, "type": "mlx"},
+            ),
+        )
+
+        model, metadata = load_align_model("en", "cpu")
+
+        assert metadata["type"] == "mlx"
+        loader.assert_called_once()
+        # bundle name was remapped to its HF checkpoint before backend selection
+        assert loader.call_args.args[1] == "facebook/wav2vec2-base-960h"
+
+    def test_mlx_unavailable_falls_back(self, mocker, monkeypatch):
+        """A missing mlx-audio must degrade to the Hugging Face path under auto."""
+        import whispermlx
+        import whispermlx.alignment as alignment_module
+        from whispermlx.alignment import load_align_model
+
+        mock_processor = mocker.MagicMock()
+        mock_processor.tokenizer.get_vocab.return_value = {"<pad>": 0, "x": 1}
+        mock_hf_model = mocker.MagicMock()
+        mock_hf_model.to.return_value = torch.nn.Linear(5, 5)
+
+        mocker.patch(
+            "whispermlx.alignment.Wav2Vec2Processor.from_pretrained", return_value=mock_processor
+        )
+        mocker.patch(
+            "whispermlx.alignment.Wav2Vec2ForCTC.from_pretrained", return_value=mock_hf_model
+        )
+        mock_logger = mocker.patch.object(alignment_module, "logger")
+
+        monkeypatch.delattr(whispermlx, "_mlx_align", raising=False)
+        monkeypatch.setitem(sys.modules, "whispermlx._mlx_align", None)
+
+        model, metadata = load_align_model("ja", "cpu")
+
+        assert metadata["type"] == "huggingface"
+        assert mock_logger.info.called
+
+    def test_mlx_unavailable_raises_when_strict(self, monkeypatch):
+        """--align_backend mlx must raise with an install hint, never fall back."""
+        import whispermlx
+        from whispermlx.alignment import load_align_model
+
+        monkeypatch.delattr(whispermlx, "_mlx_align", raising=False)
+        monkeypatch.setitem(sys.modules, "whispermlx._mlx_align", None)
+
+        with pytest.raises(ImportError, match="mlx-audio"):
+            load_align_model("en", "cpu", backend="mlx")
+
+    def test_mlx_missing_safetensors_raises_when_strict(self, mocker):
+        """A pickle-only checkpoint hard-errors under --align_backend mlx."""
+        import whispermlx._mlx_align as mlx_align
+        from whispermlx.alignment import load_align_model
+
+        mocker.patch.object(
+            mlx_align,
+            "load_mlx_align_model",
+            side_effect=mlx_align.UnsupportedCheckpointError(
+                "jonatasgrosman/wav2vec2-large-xlsr-53-japanese ships no model.safetensors "
+                "(pickle-only checkpoint); re-run with --align_backend torch"
+            ),
+        )
+
+        with pytest.raises(mlx_align.UnsupportedCheckpointError, match="align_backend torch"):
+            load_align_model("ja", "cpu", backend="mlx")
+
+    def test_mlx_missing_safetensors_falls_back(self, mocker):
+        """Same checkpoint under auto: one info log, then the torch path."""
+        import whispermlx._mlx_align as mlx_align
+        import whispermlx.alignment as alignment_module
+        from whispermlx.alignment import load_align_model
+
+        mocker.patch.object(
+            mlx_align,
+            "load_mlx_align_model",
+            side_effect=mlx_align.UnsupportedCheckpointError("no model.safetensors"),
+        )
+        mocker.patch(
+            "whispermlx.alignment.Wav2Vec2Processor.from_pretrained",
+            side_effect=OSError("Can't load feature extractor for 'some/model'"),
+        )
+        mock_logger = mocker.patch.object(alignment_module, "logger")
+
+        with pytest.raises(ValueError):
+            load_align_model("ja", "cpu")
+
+        info_text = " ".join(str(a) for a in mock_logger.info.call_args[0])
+        assert "using the torch backend" in info_text
+
+    def test_align_dispatches_to_mlx(self):
+        """align() feeds numpy audio to an MLX-typed model and returns timings."""
+        import mlx.core as mx
+
+        from whispermlx.alignment import align
+        from whispermlx.schema import SingleSegment
+
+        num_frames = 40
+        vocab = {"<pad>": 0, "a": 1, "b": 2, "|": 3}
+        # logits favour "a" then "|" then "b", so "a b" aligns cleanly
+        logits = np.full((1, num_frames, len(vocab)), -5.0, dtype=np.float32)
+        logits[:, : num_frames // 3, 1] = 5.0
+        logits[:, num_frames // 3 : 2 * num_frames // 3, 3] = 5.0
+        logits[:, 2 * num_frames // 3 :, 2] = 5.0
+
+        seen = {}
+
+        class FakeMLXModel:
+            def __call__(self, input_values):
+                seen["dtype"] = input_values.dtype
+                seen["shape"] = tuple(input_values.shape)
+                return mx.array(logits)
+
+        metadata = {"language": "en", "dictionary": vocab, "type": "mlx"}
+        audio = np.zeros(16000 * 2, dtype=np.float32)
+        transcript: list[SingleSegment] = [{"text": "a b", "start": 0.0, "end": 2.0}]
+
+        result = align(
+            transcript,
+            FakeMLXModel(),
+            metadata,
+            audio,
+            device="cpu",
+        )
+
+        assert seen["dtype"] == mx.float32
+        assert seen["shape"][0] == 1
+        words = result["word_segments"]
+        assert [w["word"] for w in words] == ["a", "b"]
+        for word in words:
+            assert 0.0 <= word["start"] <= word["end"] <= 2.0
+            assert 0.0 <= word["score"] <= 1.0

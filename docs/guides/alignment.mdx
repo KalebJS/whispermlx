@@ -11,6 +11,30 @@ After transcription, segments have start and end times for each chunk of speech 
 
 The result adds a `words` list to every segment and a flat `word_segments` list to the top-level result.
 
+## Backends
+
+Alignment runs on Metal through MLX by default. The wav2vec2 encoder comes from `mlx-audio`; only checkpoints that ship `model.safetensors` weights can run on it.
+
+Some Hugging Face repos still publish only pickle (`.bin`) weights. For those, the default `--align_backend auto` logs one line and uses the PyTorch path instead, so no language loses alignment. Control this with `--align_backend`:
+
+| Value | Behaviour |
+|---|---|
+| `auto` (default) | Use MLX; fall back to torch when a checkpoint has no safetensors |
+| `mlx` | Use MLX only; raise `UnsupportedCheckpointError` for pickle-only repos |
+| `torch` | Always use the torchaudio / Hugging Face path (previous behaviour) |
+
+```bash
+# force the MLX backend and fail loudly on unsupported checkpoints
+whispermlx audio.mp3 --align_backend mlx
+
+# pin the pre-MLX behaviour
+whispermlx audio.mp3 --align_backend torch
+```
+
+<Note>
+  The MLX backend never reads `.bin` checkpoints. If you pass a custom `--align_model` that only publishes pickle weights, `auto` logs one line and uses torch for it.
+</Note>
+
 ## Step-by-step guide
 
 <Steps>
@@ -116,47 +140,49 @@ Alignment models are available for over 30 languages. The model is selected auto
 
 | Language | Code | Backend |
 |---|---|---|
-| English | `en` | torchaudio |
-| French | `fr` | torchaudio |
-| German | `de` | torchaudio |
-| Spanish | `es` | torchaudio |
-| Italian | `it` | torchaudio |
-| Japanese | `ja` | Hugging Face |
-| Chinese | `zh` | Hugging Face |
-| Dutch | `nl` | Hugging Face |
-| Ukrainian | `uk` | Hugging Face |
-| Portuguese | `pt` | Hugging Face |
-| Arabic | `ar` | Hugging Face |
-| Czech | `cs` | Hugging Face |
-| Russian | `ru` | Hugging Face |
-| Polish | `pl` | Hugging Face |
-| Hungarian | `hu` | Hugging Face |
-| Finnish | `fi` | Hugging Face |
-| Persian | `fa` | Hugging Face |
-| Greek | `el` | Hugging Face |
-| Turkish | `tr` | Hugging Face |
-| Danish | `da` | Hugging Face |
-| Hebrew | `he` | Hugging Face |
-| Vietnamese | `vi` | Hugging Face |
-| Korean | `ko` | Hugging Face |
-| Urdu | `ur` | Hugging Face |
-| Telugu | `te` | Hugging Face |
-| Hindi | `hi` | Hugging Face |
-| Catalan | `ca` | Hugging Face |
-| Malayalam | `ml` | Hugging Face |
-| Norwegian Bokmål | `no` | Hugging Face |
-| Norwegian Nynorsk | `nn` | Hugging Face |
-| Slovak | `sk` | Hugging Face |
-| Slovenian | `sl` | Hugging Face |
-| Croatian | `hr` | Hugging Face |
-| Romanian | `ro` | Hugging Face |
-| Basque | `eu` | Hugging Face |
-| Galician | `gl` | Hugging Face |
-| Georgian | `ka` | Hugging Face |
-| Latvian | `lv` | Hugging Face |
-| Tagalog | `tl` | Hugging Face |
-| Swedish | `sv` | Hugging Face |
-| Indonesian | `id` | Hugging Face |
+| English | `en` | MLX |
+| French | `fr` | Torch |
+| German | `de` | Torch |
+| Spanish | `es` | Torch |
+| Italian | `it` | Torch |
+| Japanese | `ja` | Torch |
+| Chinese | `zh` | Torch |
+| Dutch | `nl` | Torch |
+| Ukrainian | `uk` | MLX |
+| Portuguese | `pt` | Torch |
+| Arabic | `ar` | Torch |
+| Czech | `cs` | MLX |
+| Russian | `ru` | Torch |
+| Polish | `pl` | Torch |
+| Hungarian | `hu` | Torch |
+| Finnish | `fi` | Torch |
+| Persian | `fa` | Torch |
+| Greek | `el` | Torch |
+| Turkish | `tr` | Torch |
+| Danish | `da` | MLX |
+| Hebrew | `he` | MLX |
+| Vietnamese | `vi` | Torch |
+| Korean | `ko` | MLX |
+| Urdu | `ur` | MLX |
+| Telugu | `te` | Torch |
+| Hindi | `hi` | MLX |
+| Catalan | `ca` | Torch |
+| Malayalam | `ml` | Torch |
+| Norwegian Bokmål | `no` | MLX |
+| Norwegian Nynorsk | `nn` | MLX |
+| Slovak | `sk` | Torch |
+| Slovenian | `sl` | Torch |
+| Croatian | `hr` | MLX |
+| Romanian | `ro` | MLX |
+| Basque | `eu` | MLX |
+| Galician | `gl` | Torch |
+| Georgian | `ka` | Torch |
+| Latvian | `lv` | MLX |
+| Tagalog | `tl` | Torch |
+| Swedish | `sv` | MLX |
+| Indonesian | `id` | Torch |
+
+"Torch" means the default checkpoint for that language has no safetensors weights, so `--align_backend auto` uses the PyTorch path. Every language in the table keeps working.
 
 If no default model exists for a language, pass a custom wav2vec2 model via `--align_model` (CLI) or the `model_name` parameter.
 
@@ -216,6 +242,7 @@ whispermlx audio.mp3 --model large-v3 --interpolate_method linear
 |---|---|
 | `--no_align` | Skip alignment entirely |
 | `--align_model MODEL` | Custom wav2vec2 model name or Hugging Face repo ID |
+| `--align_backend` | `auto` (default), `mlx`, or `torch` — see [Backends](#backends) |
 | `--interpolate_method` | Timestamp interpolation for unaligned words (`nearest`, `linear`, `ignore`) |
 | `--return_char_alignments` | Include character-level timestamps in the JSON output |
 

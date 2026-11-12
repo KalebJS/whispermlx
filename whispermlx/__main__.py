@@ -32,6 +32,7 @@ def cli():
 
     # alignment params
     parser.add_argument("--align_model", default=None, help="Name of phoneme-level ASR model to do alignment")
+    parser.add_argument("--align_backend", type=str, default="auto", choices=["auto", "mlx", "torch"], help="auto tries the MLX wav2vec2 backend and falls back to torch for checkpoints without safetensors")
     parser.add_argument("--interpolate_method", default="nearest", choices=["nearest", "linear", "ignore"], help="For word .srt, method to assign timestamps to non-aligned words, or merge them into neighbouring.")
     parser.add_argument("--no_align", action='store_true', help="Do not perform phoneme alignment")
     parser.add_argument("--return_char_alignments", action='store_true', help="Return character-level alignments in the output json file")

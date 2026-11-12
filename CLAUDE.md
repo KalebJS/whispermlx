@@ -38,7 +38,7 @@ Audio → load_audio() (16kHz) → VAD segments → MLX Whisper → [wav2vec2 al
 
 - **`asr.py`** — `MLXWhisperPipeline` + `load_model()`. Iterates VAD segments, calls `mlx_whisper.transcribe()` per chunk. Short model names (e.g. `large-v3`) are mapped to `mlx-community/whisper-*` HF repos via `MLX_MODEL_MAP`.
 - **`transcribe.py`** — `transcribe_task()` orchestrates all three stages; explicit `gc.collect()` between stages for memory.
-- **`alignment.py`** — `load_align_model()` / `align()`: wav2vec2-based forced alignment for word-level timestamps. Supports 30+ languages.
+- **`alignment.py`** — `load_align_model()` / `align()`: wav2vec2-based forced alignment for word-level timestamps. Supports 30+ languages. `_mlx_align.py` holds the MLX wav2vec2 CTC encoder used by the default `auto` backend; checkpoints without safetensors fall back to torch.
 - **`diarize.py`** — `DiarizationPipeline` (pyannote) + `assign_word_speakers()`. Uses a custom `IntervalTree` (binary search) for O(log n) speaker lookup.
 - **`vads/`** — Pluggable VAD via abstract `Vad` base class. Two implementations: `Pyannote` (loads local `assets/pytorch_model.bin`) and `Silero` (torch.hub).
 - **`schema.py`** — TypedDict definitions for all data structures (`TranscriptionResult`, `SingleSegment`, `AlignedTranscriptionResult`, etc.).
@@ -52,8 +52,9 @@ Audio → load_audio() (16kHz) → VAD segments → MLX Whisper → [wav2vec2 al
 ### Dependencies
 
 - `mlx-whisper` — ASR inference (Apple Silicon only)
-- `torch` / `torchaudio` — required by pyannote VAD and wav2vec2 alignment (CPU wheels via pytorch-cpu index)
-- `transformers` — wav2vec2 alignment models
+- `mlx-audio` — MLX wav2vec2 encoder for forced alignment
+- `torch` / `torchaudio` — required by pyannote VAD, diarization and the alignment fallback path (CPU wheels via pytorch-cpu index)
+- `transformers` — only the alignment fallback path (checkpoints without safetensors weights)
 - `pyannote-audio` — VAD + speaker diarization
 
 ## Tooling
