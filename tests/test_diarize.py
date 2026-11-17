@@ -1,11 +1,21 @@
-"""Tests for whispermlx/diarize.py — IntervalTree and assign_word_speakers."""
+"""Tests for whispermlx/diarize.py — IntervalTree, assign_word_speakers, per-chunk embeddings."""
 
 import copy
 
+import numpy as np
 import pandas as pd
 import pytest
+import torch
+from pyannote.audio.core.io import Audio
+from pyannote.audio.models.embedding import WeSpeakerResNet34
+from pyannote.audio.pipelines import SpeakerDiarization
+from pyannote.audio.pipelines.speaker_verification import PyannoteAudioPretrainedSpeakerEmbedding
+from pyannote.core import SlidingWindow
+from pyannote.core import SlidingWindowFeature
 
 from whispermlx.diarize import IntervalTree
+from whispermlx.diarize import _get_embeddings_per_chunk
+from whispermlx.diarize import _supports_stacked_masks
 from whispermlx.diarize import assign_word_speakers
 
 
@@ -194,3 +204,93 @@ class TestAssignWordSpeakers:
         result = copy.deepcopy(minimal_transcript)
         out = assign_word_speakers(simple_diarize_df, result)
         assert out is result
+
+
+# ── Per-chunk embedding extraction ─────────────────────────────────────────────
+
+
+class _FakeDiarization:
+    """Just the attributes SpeakerDiarization.get_embeddings reads at inference time."""
+
+    def __init__(self, embedding, batch_size):
+        self._embedding = embedding
+        self._audio = Audio(sample_rate=16000)
+        self.embedding_batch_size = batch_size
+        self.training = False
+
+
+@pytest.fixture(scope="module")
+def wespeaker_embedding():
+    torch.manual_seed(0)
+    return PyannoteAudioPretrainedSpeakerEmbedding(WeSpeakerResNet34().eval())
+
+
+@pytest.fixture
+def chunked_inputs():
+    """Random 8s waveform cut into 2s chunks every 0.5s, with 3 local speakers per chunk."""
+    rng = np.random.default_rng(0)
+    file = {
+        "waveform": torch.from_numpy(rng.standard_normal((1, 8 * 16000)).astype(np.float32)),
+        "sample_rate": 16000,
+    }
+    num_chunks, num_frames, num_speakers = 13, 50, 3
+    data = (rng.random((num_chunks, num_frames, num_speakers)) > 0.5).astype(np.float32)
+    data[:, :, 2] = 0.0  # a fully silent speaker slot, as is common in practice
+    data[0, :5, 0] = np.nan  # partial stitching may produce NaN
+    segmentations = SlidingWindowFeature(data, SlidingWindow(start=0.0, duration=2.0, step=0.5))
+    return file, segmentations
+
+
+@pytest.mark.parametrize("exclude_overlap", [False, True])
+@pytest.mark.parametrize("batch_size", [1, 4, 32])
+def test_per_chunk_embeddings_match_pyannote(
+    wespeaker_embedding, chunked_inputs, exclude_overlap, batch_size
+):
+    file, segmentations = chunked_inputs
+    pipeline = _FakeDiarization(wespeaker_embedding, batch_size)
+
+    expected = SpeakerDiarization.get_embeddings(
+        pipeline, file, segmentations, exclude_overlap=exclude_overlap
+    )
+    actual = _get_embeddings_per_chunk(
+        pipeline, file, segmentations, exclude_overlap=exclude_overlap
+    )
+
+    assert actual.shape == expected.shape == (13, 3, wespeaker_embedding.dimension)
+    np.testing.assert_array_equal(np.isnan(actual), np.isnan(expected))
+    np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-5, equal_nan=True)
+
+
+def test_per_chunk_embeddings_report_progress(wespeaker_embedding, chunked_inputs):
+    file, segmentations = chunked_inputs
+    calls = []
+
+    def hook(step_name, step_artifact, file=None, total=None, completed=None):
+        calls.append(
+            (step_name, total, completed, None if step_artifact is None else step_artifact.shape)
+        )
+
+    _get_embeddings_per_chunk(
+        _FakeDiarization(wespeaker_embedding, 4), file, segmentations, hook=hook
+    )
+
+    dim = wespeaker_embedding.dimension
+    assert calls == [
+        ("embeddings", 4, 0, None),
+        ("embeddings", 4, 1, (12, dim)),
+        ("embeddings", 4, 2, (12, dim)),
+        ("embeddings", 4, 3, (12, dim)),
+        ("embeddings", 4, 4, (3, dim)),
+    ]
+
+
+def test_supports_stacked_masks_for_wespeaker(wespeaker_embedding):
+    assert _supports_stacked_masks(wespeaker_embedding) is True
+
+
+def test_supports_stacked_masks_rejects_other_backends():
+    class OtherBackend:
+        def __call__(self, waveforms, masks=None):
+            return np.zeros((waveforms.shape[0], 192))
+
+    assert _supports_stacked_masks(OtherBackend()) is False
