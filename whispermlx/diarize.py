@@ -1,7 +1,12 @@
+import math
+import types
+
 import numpy as np
 import pandas as pd
 import torch
 from pyannote.audio import Pipeline
+from pyannote.audio.pipelines import SpeakerDiarization
+from pyannote.audio.pipelines.speaker_verification import PyannoteAudioPretrainedSpeakerEmbedding
 
 from whispermlx.audio import SAMPLE_RATE
 from whispermlx.audio import load_audio
@@ -90,6 +95,100 @@ class IntervalTree:
         return self.speakers[nearest_idx]
 
 
+def _supports_stacked_masks(embedding) -> bool:
+    """
+    Check whether an embedding model accepts (batch, speakers, frames) masks in a single call.
+
+    pyannote-native WeSpeaker models only apply masks in their statistics pooling layer,
+    which already supports a speakers dimension. Other backends (SpeechBrain, NeMo, ONNX)
+    apply masks before the frame-wise network and must keep pyannote's per-pair loop.
+    """
+    if not isinstance(embedding, PyannoteAudioPretrainedSpeakerEmbedding):
+        return False
+    try:
+        with torch.inference_mode():
+            waveforms = torch.zeros(1, 1, embedding.sample_rate, device=embedding.device)
+            weights = torch.ones(1, 2, 10, device=embedding.device)
+            output = embedding.model_(waveforms, weights=weights)
+    except Exception:
+        return False
+    return tuple(output.shape) == (1, 2, embedding.dimension)
+
+
+def _get_embeddings_per_chunk(
+    self: SpeakerDiarization,
+    file,
+    binary_segmentations,
+    exclude_overlap: bool = False,
+    hook=None,
+):
+    """
+    Drop-in replacement for SpeakerDiarization.get_embeddings that runs the embedding
+    model once per chunk instead of once per (chunk, speaker) pair.
+
+    pyannote feeds the same chunk waveform to the embedding model once for every local
+    speaker, while the speaker mask only enters at the final pooling layer. Stacking a
+    chunk's masks and pooling them in one call yields the same embeddings (up to float
+    noise) with num_speakers times less work in the frame-wise network.
+    """
+    if self.training:
+        return SpeakerDiarization.get_embeddings(
+            self, file, binary_segmentations, exclude_overlap=exclude_overlap, hook=hook
+        )
+
+    duration = binary_segmentations.sliding_window.duration
+    num_chunks, num_frames, _ = binary_segmentations.data.shape
+    data = binary_segmentations.data
+    # masks may contain NaN (in case of partial stitching)
+    segmentations = np.nan_to_num(data, nan=0.0).astype(np.float32)
+
+    if exclude_overlap:
+        # same rule as pyannote: use the overlap-free mask when it is long enough
+        # to extract an embedding from, otherwise fall back to the full mask.
+        # Overlap is computed before NaN removal, so frames with NaN never count as clean.
+        min_num_samples = self._embedding.min_num_samples
+        num_samples = duration * self._embedding.sample_rate
+        min_num_frames = math.ceil(num_frames * min_num_samples / num_samples)
+        clean_frames = np.sum(data, axis=2, keepdims=True) < 2
+        clean_segmentations = np.nan_to_num(data * clean_frames, nan=0.0).astype(np.float32)
+        use_clean = np.sum(clean_segmentations, axis=1, keepdims=True) > min_num_frames
+        segmentations = np.where(use_clean, clean_segmentations, segmentations)
+
+    # (num_chunks, num_speakers, num_frames)
+    masks = torch.from_numpy(np.ascontiguousarray(segmentations.transpose(0, 2, 1)))
+    chunks = [chunk for chunk, _ in binary_segmentations]
+
+    model = self._embedding.model_
+    device = self._embedding.device
+    batch_size = self.embedding_batch_size
+    batch_count = math.ceil(num_chunks / batch_size)
+
+    if hook is not None:
+        hook("embeddings", None, total=batch_count, completed=0)
+
+    embedding_batches = []
+    for i, start in enumerate(range(0, num_chunks, batch_size), 1):
+        end = min(start + batch_size, num_chunks)
+        waveforms = torch.stack(
+            [self._audio.crop(file, chunks[c], mode="pad")[0] for c in range(start, end)]
+        )
+        with torch.inference_mode():
+            embedding_batch = model(waveforms.to(device), weights=masks[start:end].to(device))
+        embedding_batch = embedding_batch.cpu().numpy()
+        embedding_batches.append(embedding_batch)
+
+        if hook is not None:
+            hook(
+                "embeddings",
+                embedding_batch.reshape(-1, embedding_batch.shape[-1]),
+                total=batch_count,
+                completed=i,
+            )
+
+    # (num_chunks, num_speakers, dimension)
+    return np.concatenate(embedding_batches, axis=0)
+
+
 class DiarizationPipeline:
     def __init__(
         self,
@@ -105,6 +204,10 @@ class DiarizationPipeline:
         self.model = Pipeline.from_pretrained(model_config, token=token, cache_dir=cache_dir).to(
             device
         )
+        if isinstance(self.model, SpeakerDiarization) and _supports_stacked_masks(
+            self.model._embedding
+        ):
+            self.model.get_embeddings = types.MethodType(_get_embeddings_per_chunk, self.model)
 
     def __call__(
         self,
